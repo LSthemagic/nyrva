@@ -1,0 +1,65 @@
+name: Apply reviewed telemetry changes
+
+on:
+  push:
+    branches: [feat/nyrva-1.0]
+    paths:
+      - '.github/apply-telemetry.patch'
+      - '.github/workflows/apply-telemetry.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  apply:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/feat/nyrva-1.0'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - name: Verify and apply the reviewed patch
+        run: |
+          set -euo pipefail
+          echo '9c1f6ff5dd7248b1c67db880b81728bd6ef7eb5733f382323713d31bf1c33d4f  .github/apply-telemetry.patch' | sha256sum --check
+          git apply --check --whitespace=error .github/apply-telemetry.patch
+          git apply --whitespace=error .github/apply-telemetry.patch
+          cargo fmt -p nyrva-core
+          rustfmt --edition 2021 nyrva/src/telemetry.rs
+          cargo metadata --format-version 1 > /dev/null
+      - name: Verify core contracts and process-level CLI acceptance
+        run: |
+          set -euo pipefail
+          mkdir -p verification
+          cargo test -p nyrva-core --locked --no-fail-fast -- --nocapture 2>&1 | tee verification/core-tests.log
+          cargo build -p nyrva-core --bin nyrva-telemetry --locked
+          python scripts/smoke_telemetry.py --binary target/debug/nyrva-telemetry --output verification/cli-smoke.json
+      - name: Commit tested core and desktop wiring to the unchanged feature branch
+        env:
+          EXPECTED_HEAD: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          git fetch origin feat/nyrva-1.0
+          test "$(git rev-parse FETCH_HEAD)" = "$EXPECTED_HEAD"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- Cargo.lock nyrva-core nyrva/Cargo.toml nyrva/src/main.rs nyrva/src/antigravity.rs nyrva/src/telemetry.rs
+          git commit -m 'feat: connect local telemetry core to desktop and harden stale recovery'
+          git push origin HEAD:refs/heads/feat/nyrva-1.0
+          git rev-parse HEAD > verification/commit.txt
+          git archive --format=tar.gz HEAD > verification/source.tar.gz
+          cp target/debug/nyrva-telemetry verification/nyrva-telemetry
+      - name: Preserve verification evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: telemetry-applied-evidence
+          path: verification/
+          if-no-files-found: warn
+          retention-days: 7
