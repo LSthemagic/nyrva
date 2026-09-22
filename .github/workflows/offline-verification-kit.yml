@@ -1,0 +1,71 @@
+name: Offline verification kit
+on:
+  push:
+    branches: [feat/nyrva-1.0]
+    paths: [.github/workflows/offline-verification-kit.yml]
+permissions:
+  contents: read
+jobs:
+  prepare:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - name: Verify restored baseline
+        run: |
+          set -o pipefail
+          mkdir -p evidence
+          cargo test -p nyrva-core --locked --no-fail-fast 2>&1 | tee evidence/core-baseline.log
+          cargo build -p nyrva-core --bin nyrva-telemetry --locked
+          python scripts/smoke_telemetry.py --binary target/debug/nyrva-telemetry --output evidence/baseline-smoke.json
+          python -m unittest discover -s tests -p 'test_*.py' -v 2>&1 | tee evidence/release-tools.log
+      - name: Cache dependency sources for offline verification
+        run: |
+          mkdir -p /tmp/nyrva-verification-deps/src
+          cat > /tmp/nyrva-verification-deps/Cargo.toml <<'EOF'
+          [package]
+          name = "nyrva-verification-deps"
+          version = "0.0.0"
+          edition = "2021"
+          [dependencies]
+          crossterm = "0.29"
+          getrandom = "0.2"
+          fs2 = "0.4"
+          sha2 = "0.10"
+          tiny_http = "0.12"
+          ureq = { version = "2", features = ["json", "native-tls"] }
+          base64 = "0.22"
+          EOF
+          printf 'fn main() {}\n' > /tmp/nyrva-verification-deps/src/main.rs
+          cargo fetch --manifest-path /tmp/nyrva-verification-deps/Cargo.toml
+      - name: Package source and offline compiler
+        run: |
+          git archive --format=tar.gz HEAD > evidence/source.tar.gz
+          git rev-parse HEAD > evidence/commit.txt
+          cp target/debug/nyrva-telemetry evidence/
+          toolchain="$(rustc --print sysroot)"
+          mkdir -p kit
+          cp -a "$toolchain/bin" kit/bin
+          cp -a "$toolchain/lib" kit/lib
+          cp -a "$HOME/.cargo/registry" kit/registry
+          rm -rf kit/lib/rustlib/src
+          cp /tmp/nyrva-verification-deps/Cargo.lock kit/extra-dependencies.lock
+          tar -czf offline-rust-kit.tar.gz -C kit .
+          sha256sum offline-rust-kit.tar.gz > evidence/offline-kit.sha256
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nyrva-offline-kit
+          path: offline-rust-kit.tar.gz
+          compression-level: 0
+          retention-days: 2
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: nyrva-restored-baseline
+          path: evidence/
+          retention-days: 7
