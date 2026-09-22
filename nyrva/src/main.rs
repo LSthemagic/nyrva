@@ -2,6 +2,7 @@
 
 mod autostart;
 mod config;
+mod telemetry;
 mod doctor;
 mod focus;
 mod hooks_install;
@@ -489,6 +490,7 @@ fn report(r: Result<String, String>) {
 fn main() {
     platform::attach_parent_console();
     let args: Vec<String> = std::env::args().collect();
+    if let Some(code) = telemetry::run_cli(&args[1..]) { std::process::exit(code); }
     if let Some(cmd) = args.get(1) {
         match cmd.as_str() {
             "install-hooks" => {
@@ -573,6 +575,7 @@ fn main() {
             codex::start(handle.clone());
             cursor::start(handle.clone());
             antigravity::start(handle.clone());
+            telemetry::start();
             activity::start(handle.clone());
             // Collecting glyphs may read icon resources out of a few executables; do it off the main thread and push when done
             let gh = handle.clone();

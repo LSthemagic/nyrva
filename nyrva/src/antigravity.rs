@@ -1,6 +1,7 @@
 //! Antigravity (Google's IDE, Gemini quota) usage adapter.
 //!
 //! Data sources, in trust order:
+//! 0. Opt-in Antigravity CLI statusline telemetry (active account, fresh).
 //! 1. Antigravity's local `language_server` bridge.
 //! 2. The last bridge reading, marked stale, when the IDE closes.
 //! 3. Antigravity's own Google credential, borrowed read-only from the native credential store.
@@ -64,7 +65,7 @@ fn persist(s: &UsageSnapshot) {
 }
 
 pub fn present() -> bool {
-    state_root().map(|p| p.is_dir()).unwrap_or(false) || read_credential_raw().is_some()
+    crate::telemetry::antigravity_cli_present() || state_root().map(|p| p.is_dir()).unwrap_or(false) || read_credential_raw().is_some()
 }
 
 // ---------------- 1. Local bridge ----------------
@@ -597,6 +598,8 @@ struct Runtime {
 }
 
 fn read_once(runtime: &mut Runtime, previous: &UsageSnapshot) -> UsageSnapshot {
+    if let Some(cli) = crate::telemetry::antigravity_usage(true) { return cli; }
+
     let mut snapshot = UsageSnapshot::default();
     let mut bridge_error = String::new();
     let mut bridge_tried = false;
@@ -645,6 +648,8 @@ fn read_once(runtime: &mut Runtime, previous: &UsageSnapshot) -> UsageSnapshot {
         snapshot.note = "Antigravity is closed — last reading kept".into();
         return snapshot;
     }
+
+    if let Some(cli) = crate::telemetry::antigravity_usage(false) { return cli; }
 
     let mut tier = None;
     match read_credentials() {
@@ -695,6 +700,8 @@ fn read_once(runtime: &mut Runtime, previous: &UsageSnapshot) -> UsageSnapshot {
 }
 
 fn broadcast(app: &AppHandle, snapshot: UsageSnapshot) {
+    // A late IDE response must not overwrite the active, fresh CLI reading.
+    let snapshot = crate::telemetry::antigravity_usage(true).unwrap_or(snapshot);
     let state = app.state::<AppState>();
     *state.antigravity.lock().unwrap() = snapshot.clone();
     persist(&snapshot);

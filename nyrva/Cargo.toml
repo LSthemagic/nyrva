@@ -10,6 +10,7 @@ repository = "https://github.com/LSthemagic/nyrva"
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
+nyrva-core = { path = "../nyrva-core" }
 tauri = { version = "2", features = ["tray-icon", "image-png"] }
 tauri-plugin-single-instance = "2"
 serde = { version = "1", features = ["derive"] }

@@ -2639,6 +2639,7 @@ dependencies = [
  "keyring",
  "native-tls",
  "notify",
+ "nyrva-core",
  "png 0.17.16",
  "rusqlite",
  "serde",
