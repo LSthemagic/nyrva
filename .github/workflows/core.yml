@@ -9,6 +9,7 @@ on:
       - 'Cargo.toml'
       - 'Cargo.lock'
       - '.github/workflows/core.yml'
+      - 'scripts/smoke_telemetry.py'
 
 permissions:
   contents: read
@@ -34,7 +35,15 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          cargo test -p nyrva-core --no-fail-fast -- --nocapture 2>&1 | tee core-tests.log
+          cargo test -p nyrva-core --locked --no-fail-fast -- --nocapture 2>&1 | tee core-tests.log
+      - name: Build headless telemetry helper
+        run: cargo build -p nyrva-core --bin nyrva-telemetry --locked
+      - name: Black-box CLI acceptance (Linux)
+        if: runner.os == 'Linux'
+        run: python scripts/smoke_telemetry.py --binary target/debug/nyrva-telemetry --output verification/cli-smoke.json
+      - name: Black-box CLI acceptance (Windows)
+        if: runner.os == 'Windows'
+        run: python scripts/smoke_telemetry.py --binary target/debug/nyrva-telemetry.exe --output verification/cli-smoke.json
       - name: Preserve reproducible source and resolved lockfile
         if: always() && runner.os == 'Linux'
         shell: bash
@@ -52,39 +61,3 @@ jobs:
           path: verification/
           retention-days: 7
           if-no-files-found: error
-
-  # Temporary bootstrap for this implementation branch only. The authoring
-  # environment cannot run Cargo; the lockfile must come from Cargo, not hand edits.
-  # No PR code gets a write token and neither main nor tags can be pushed here.
-  resolve-feature-lock:
-    needs: contracts
-    if: github.event_name == 'push' && github.ref == 'refs/heads/feat/nyrva-1.0'
-    runs-on: ubuntu-22.04
-    timeout-minutes: 10
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.sha }}
-      - uses: dtolnay/rust-toolchain@stable
-      - name: Generate and verify the feature lockfile
-        run: |
-          cargo metadata --format-version 1 > /dev/null
-          cargo test -p nyrva-core --locked
-      - name: Commit only Cargo.lock on the unchanged feature branch
-        env:
-          EXPECTED_HEAD: ${{ github.sha }}
-        run: |
-          set -euo pipefail
-          if git diff --quiet -- Cargo.lock; then exit 0; fi
-          git fetch origin feat/nyrva-1.0
-          if [ "$(git rev-parse FETCH_HEAD)" != "$EXPECTED_HEAD" ]; then
-            echo 'Feature branch advanced; a subsequent run will reconcile the lockfile.'
-            exit 0
-          fi
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add -- Cargo.lock
-          git commit -m 'build: resolve Nyrva core workspace lockfile'
-          git push origin HEAD:refs/heads/feat/nyrva-1.0

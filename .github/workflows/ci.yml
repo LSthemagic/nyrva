@@ -37,6 +37,10 @@ jobs:
         run: cargo check --workspace
       - name: Cargo test
         run: cargo test --workspace
+      - name: Build and exercise desktop telemetry commands
+        run: |
+          cargo build -p nyrva --locked
+          python scripts/smoke_telemetry.py --binary target/debug/nyrva.exe --output target/telemetry-smoke.json
       - name: Install Tauri CLI
         run: cargo install tauri-cli --version "^2.0.0" --locked
       - name: Prepare release sidecar
@@ -103,6 +107,10 @@ jobs:
         run: git diff --exit-code -- Cargo.lock
       - name: Cargo test
         run: cargo test --workspace
+      - name: Build and exercise desktop telemetry commands without a display
+        run: |
+          cargo build -p nyrva --locked
+          python scripts/smoke_telemetry.py --binary target/debug/nyrva --output target/telemetry-smoke.json
       - name: Install Tauri CLI
         run: cargo install tauri-cli --version "^2.0.0" --locked
       - name: Prepare release sidecar
