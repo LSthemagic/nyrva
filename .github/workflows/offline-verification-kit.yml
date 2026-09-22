@@ -13,6 +13,10 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt
@@ -46,6 +50,7 @@ jobs:
       - name: Package source and offline compiler
         run: |
           git archive --format=tar.gz HEAD > evidence/source.tar.gz
+          git bundle create evidence/repository.bundle --all
           git rev-parse HEAD > evidence/commit.txt
           cp target/debug/nyrva-telemetry evidence/
           toolchain="$(rustc --print sysroot)"
