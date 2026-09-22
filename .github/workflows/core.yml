@@ -1,0 +1,54 @@
+name: Nyrva core contracts
+
+on:
+  push:
+    branches: [feat/nyrva-1.0]
+  pull_request:
+    paths:
+      - 'nyrva-core/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - '.github/workflows/core.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: core-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contracts:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Core contract tests
+        shell: bash
+        run: |
+          set -o pipefail
+          cargo test -p nyrva-core -- --nocapture 2>&1 | tee core-tests.log
+      - name: Preserve reproducible source and resolved lockfile
+        if: always() && runner.os == 'Linux'
+        shell: bash
+        run: |
+          mkdir -p verification
+          git archive --format=tar.gz HEAD > verification/source.tar.gz
+          cp Cargo.lock verification/Cargo.lock
+          cp core-tests.log verification/core-tests.log
+          git rev-parse HEAD > verification/commit.txt
+      - name: Upload verification evidence
+        if: always() && runner.os == 'Linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: nyrva-core-evidence
+          path: verification/
+          retention-days: 7
+          if-no-files-found: error

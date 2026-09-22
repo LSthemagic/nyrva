@@ -1,5 +1,5 @@
 [workspace]
-members = ["nyrva", "nyrva-hook"]
+members = ["nyrva", "nyrva-hook", "nyrva-core"]
 resolver = "2"
 
 [profile.release]
