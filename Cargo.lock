@@ -2653,6 +2653,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "nyrva-core"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "rusqlite",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "nyrva-hook"
 version = "0.3.0"
 dependencies = [
