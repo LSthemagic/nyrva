@@ -2,6 +2,7 @@
 """Black-box telemetry acceptance. Uses synthetic data and an isolated directory only."""
 from __future__ import annotations
 import argparse
+from contextlib import closing
 import json
 import os
 from pathlib import Path
@@ -74,7 +75,9 @@ def run(binary: Path, output: Path | None) -> None:
 
         # Simulate an old observation, rather than waiting ten minutes in CI.
         database = root / "telemetry" / "history.sqlite3"
-        with sqlite3.connect(database) as connection:
+        # SQLite's transaction context does not close its handle. Close explicitly
+        # before TemporaryDirectory cleanup, including on Windows with strict locks.
+        with closing(sqlite3.connect(database)) as connection, connection:
             old = int(time.time() * 1000) - 700000
             row = connection.execute("SELECT payload FROM observations WHERE account_id='active'").fetchone()
             cached = json.loads(row[0])
@@ -88,10 +91,10 @@ def run(binary: Path, output: Path | None) -> None:
         assert "reset awaiting confirmation" in call("status", "--account", "active")
         passed("expired resets preserve quota and stale observation time")
 
-        with sqlite3.connect(database) as connection:
+        with closing(sqlite3.connect(database)) as connection, connection:
             connection.execute("PRAGMA user_version=99")
         call("status", "--json", expected=1)
-        with sqlite3.connect(database) as connection:
+        with closing(sqlite3.connect(database)) as connection, connection:
             assert connection.execute("PRAGMA user_version").fetchone()[0] == 99
         passed("future database schema is refused without destructive migration")
 
