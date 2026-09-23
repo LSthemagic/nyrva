@@ -1,10 +1,10 @@
-//! Native WebKit/WebView2 acceptance harness. This example is not the shipped binary.
-//! It imports the real plugin, HTML, capabilities and core; there is no mocked IPC.
+//! Native acceptance harness. Uses the production window opener, plugin and UI.
+//! Test commands and synthetic storage are not part of the shipped binary.
 #[path = "../src/observatory.rs"]
 mod observatory;
 use nyrva_core::{cli, config, Bucket, DataStatus, Provider, Snapshot};
 use serde_json::{json, Value};
-use std::{path::PathBuf, sync::atomic::{AtomicBool, Ordering}, time::Duration};
+use std::{path::PathBuf, sync::{atomic::{AtomicBool, Ordering}, mpsc}, time::{Duration, Instant}};
 use tauri::{Manager, WebviewWindow};
 
 mod telemetry {
@@ -16,15 +16,51 @@ mod telemetry {
 }
 static STARTED: AtomicBool = AtomicBool::new(false);
 
+fn until(mut condition: impl FnMut() -> bool) -> Result<(), String> {
+    let deadline = Instant::now() + Duration::from_secs(8);
+    while !condition() {
+        if Instant::now() >= deadline { return Err("native window lifecycle condition timed out".into()); }
+        std::thread::sleep(Duration::from_millis(25));
+    }
+    Ok(())
+}
+
+#[tauri::command]
+async fn experience_smoke_lifecycle(window: WebviewWindow) -> Result<Value, String> {
+    if window.label() != "dashboard" { return Err("wrong test window".into()); }
+    tauri::async_runtime::spawn_blocking(move || {
+        let app = window.app_handle().clone();
+        window.close().map_err(|e| e.to_string())?;
+        until(|| !window.is_visible().unwrap_or(true))?;
+        if app.get_webview_window("dashboard").is_none() { return Err("close destroyed the dashboard".into()); }
+        let handle = app.clone();
+        let (sender, receiver) = mpsc::channel();
+        app.run_on_main_thread(move || {
+            let result = (|| -> Result<(), String> {
+                for _ in 0..32 { observatory::open(&handle).map_err(|e| e.to_string())?; }
+                Ok(())
+            })();
+            let _ = sender.send(result);
+        }).map_err(|e| e.to_string())?;
+        receiver.recv_timeout(Duration::from_secs(3)).map_err(|_| "main-thread opening callback did not return")??;
+        until(|| window.is_visible().unwrap_or(false))?;
+        if app.webview_windows().len() != 1 { return Err("repeated opens created duplicate windows".into()); }
+        Ok(json!({"close_hides":true,"reopen_visible":true,"rapid_requests":32,"window_count":1,"event_callback_returned":true}))
+    }).await.map_err(|e| e.to_string())?
+}
+
 #[tauri::command]
 fn experience_smoke_finish(window: WebviewWindow, mut report: Value) -> Result<(), String> {
     if window.label() != "dashboard" { return Err("wrong test window".into()); }
     let root = telemetry::data_root()?;
     let preserved = std::fs::read(root.join("provider-owned.json")).ok().as_deref() == Some(b"SYNTHETIC PROVIDER SENTINEL".as_slice());
+    let returned = root.join("opening-callback-returned").is_file();
     report["provider_file_preserved"] = json!(preserved);
-    report["harness"] = json!("real Tauri plugin and native webview; isolated synthetic data");
-    report["exclusions"] = json!(["physical multi-monitor DPI", "packaged installer", "real provider authentication", "Everywhere"]);
-    let ok = report["ok"] == true && preserved;
+    report["opening_callback_returned"] = json!(returned);
+    report["harness"] = json!("production opener on the event-loop thread; real Tauri/webview/SQLite; synthetic data");
+    report["exclusions"] = json!(["physical tray click", "physical multi-monitor DPI", "packaged installer", "real provider authentication", "Everywhere"]);
+    let ok = report["ok"] == true && preserved && returned;
+    report["ok"] = json!(ok);
     std::fs::write(root.join("native-smoke.json"), serde_json::to_vec_pretty(&report).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
     window.app_handle().exit(if ok { 0 } else { 1 });
     Ok(())
@@ -32,7 +68,6 @@ fn experience_smoke_finish(window: WebviewWindow, mut report: Value) -> Result<(
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let root = telemetry::data_root().map_err(std::io::Error::other)?;
-    // Refuse existing directories: this harness must never use real user data.
     std::fs::create_dir(&root)?;
     std::fs::write(root.join("provider-owned.json"), b"SYNTHETIC PROVIDER SENTINEL")?;
     let now = cli::now_ms();
@@ -41,7 +76,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     observation.buckets.push(Bucket { id: "weekly".into(), label: "<img src=x onerror=alert(1)>".into(), remaining_fraction: Some(0.0), resets_at_ms: Some(now + 3_600_000), count: None, estimated: false, window_seconds: Some(604_800) });
     config::record(&root, &mut observation).map_err(std::io::Error::other)?;
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![experience_smoke_finish])
+        .invoke_handler(tauri::generate_handler![experience_smoke_finish, experience_smoke_lifecycle])
         .on_page_load(|webview, payload| {
             if webview.label() == "dashboard" && payload.event() == tauri::webview::PageLoadEvent::Finished && !STARTED.swap(true, Ordering::SeqCst) {
                 if let Err(error) = webview.eval(include_str!("../../tests/experience/native-smoke.js")) {
@@ -52,7 +87,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         })
         .setup(move |app| {
             observatory::install(app.handle())?;
-            observatory::open(app.handle())?;
+            let handle = app.handle().clone();
+            let marker = root.join("opening-callback-returned");
+            // Dispatch from another thread so this cannot execute inline in setup.
+            // The actual opener then runs in a synchronous event-loop callback.
+            std::thread::spawn(move || {
+                let dispatcher = handle.clone();
+                let _ = dispatcher.run_on_main_thread(move || {
+                    match observatory::open(&handle) {
+                        Ok(()) => { let _ = std::fs::write(marker, b"returned"); }
+                        Err(error) => { eprintln!("production opener failed: {error}"); handle.exit(1); }
+                    }
+                });
+            });
             let handle = app.handle().clone();
             let root = root.clone();
             std::thread::spawn(move || {
