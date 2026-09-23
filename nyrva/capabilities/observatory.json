@@ -1,0 +1,16 @@
+{
+  "identifier": "observatory",
+  "description": "Local Experience dashboard only; no remote origins, filesystem API, shell, or provider credential commands.",
+  "windows": ["dashboard"],
+  "permissions": [
+    "core:event:allow-listen",
+    "core:event:allow-unlisten",
+    "observatory:allow-read-cockpit",
+    "observatory:allow-read-history",
+    "observatory:allow-save-settings",
+    "observatory:allow-export-settings",
+    "observatory:allow-import-settings",
+    "observatory:allow-rollback-settings",
+    "observatory:allow-clear-history"
+  ]
+}
