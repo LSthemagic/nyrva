@@ -140,7 +140,7 @@ impl CodexServer {
         let input = child.stdin.take().ok_or("cannot open Codex app-server input")?;
         let output = BufReader::new(child.stdout.take().ok_or("cannot open Codex app-server output")?);
         let mut server = Self { child, input, output, next_id: 0 };
-        server.request("initialize", json!({"clientInfo":{"name":"nyrva","version":"1.0.0"},"capabilities":{"experimentalApi":true}}))?;
+        server.request("initialize", json!({"clientInfo":{"name":"nyrva","version":"1.0.1"},"capabilities":{"experimentalApi":true}}))?;
         writeln!(server.input, "{}", json!({"method":"initialized","params":{}})).map_err(|_| "cannot initialize Codex app-server")?;
         server.input.flush().map_err(|_| "cannot initialize Codex app-server")?;
         Ok(server)
