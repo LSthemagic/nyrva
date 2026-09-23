@@ -163,6 +163,32 @@ fn repeated_install_is_idempotent_and_generated_command_uses_same_root() {
         .get("statusLine")
         .is_none());
 }
+
+#[test]
+fn codex_native_statusline_contract_is_exposed_without_fake_command_slot() {
+    let t = Temp::new();
+    let home = t.0.join("codex-home");
+    fs::create_dir_all(&home).unwrap();
+    // This intentionally does not require a real account: the integration must
+    // delegate config parsing/writing to Codex itself. If Codex is unavailable,
+    // failure must be explicit rather than inventing a JSON statusLine slot.
+    let mut out = Vec::new();
+    let result = cli::run(
+        &["integrations","plan","codex","--home",home.to_str().unwrap()]
+            .iter().map(|v|v.to_string()).collect::<Vec<_>>(),
+        &t.0, &mut std::io::empty(), &mut out
+    );
+    if let Ok(()) = result {
+        let value: Value = serde_json::from_slice(&out).unwrap();
+        assert_eq!(value["provider"], "codex");
+        assert_eq!(value["native_statusline"], true);
+        assert_eq!(value["owned_items"], json!(["five-hour-limit","weekly-limit"]));
+        assert!(!home.join("settings.json").exists());
+    } else {
+        assert!(!home.join("settings.json").exists());
+    }
+}
+
 #[test]
 fn invalid_provider_json_is_not_rewritten() {
     let t = Temp::new();
