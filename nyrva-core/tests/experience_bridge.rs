@@ -14,8 +14,8 @@ impl Root {
 }
 impl Drop for Root { fn drop(&mut self) { let _ = std::fs::remove_dir_all(&self.0); } }
 fn observation(root: &Root, now: u64) {
-    let s = parse_statusline(Provider::Antigravity, "active", r#"{"quota":{"weekly":{"remaining_fraction":0,"reset_in_seconds":3600}}}"#, now).unwrap();
-    config::record(&root.0, s).unwrap();
+    let mut s = parse_statusline(Provider::Antigravity, "active", r#"{"quota":{"weekly":{"remaining_fraction":0,"reset_in_seconds":3600}}}"#, now).unwrap();
+    config::record(&root.0, &mut s).unwrap();
 }
 fn query() -> data::HistoryQuery { data::HistoryQuery { provider: "antigravity".into(), account_id: "active".into(), source: "statusline".into(), bucket_id: "weekly".into(), hours: 24 } }
 #[test]
