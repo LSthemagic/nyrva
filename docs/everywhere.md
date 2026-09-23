@@ -15,7 +15,7 @@ nyrva-telemetry sessions --json
 nyrva-telemetry cockpit --json
 nyrva-telemetry projects --json
 nyrva-telemetry agents --json
-nyrva-telemetry history --provider antigravity --account active --json
+nyrva-telemetry history antigravity --account active --json
 nyrva-telemetry doctor --json
 nyrva-telemetry export --json
 nyrva-telemetry top
@@ -100,7 +100,7 @@ Clientes locais leem esse arquivo e enviam `Authorization: Bearer <token>` e `Ho
 
 Rotas de leitura: `/v1/status`, `/v1/cockpit`, `/v1/resets`, `/v1/sessions`, `/v1/projects`, `/v1/agents`, `/v1/doctor` e `/v1/history?provider=claude&account=active&source=statusline&limit=100`. Histórico aceita no máximo 200 observações por consulta. `/v1/events` entrega eventos SSE versionados e sanitizados; reconecte após o encerramento do stream, sempre respeitando a validade da sessão. Não transmite payload bruto nem token de acesso.
 
-Limites: 8 clientes simultâneos, cabeçalhos de até 8 KiB, alvo de requisição de até 1024 bytes, respostas de até 2 MiB, prazo de leitura de cabeçalhos e timeout de escrita de 2 segundos. Cada stream envia no máximo 60 quadros e nunca ultrapassa a duração do servidor. Os limites são deliberados: esta API é uma interface local de observação, não um serviço multiusuário ou remoto.
+Limites: 8 clientes simultâneos, cabeçalhos de até 8 KiB, alvo de requisição de até 1024 bytes, respostas de até 2 MiB, checagem de prazo de cabeçalhos de 2 segundos e timeout de cada leitura/escrita de 2 segundos. Cada stream envia no máximo 60 quadros e encerra quando detecta o fim da duração do servidor. Os limites são deliberados: esta API é uma interface local de observação, não um serviço multiusuário ou remoto.
 
 ## Verificação de atualização assinada
 

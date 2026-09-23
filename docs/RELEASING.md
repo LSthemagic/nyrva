@@ -4,7 +4,7 @@
 
 `.github/workflows/release.yml` aceita uma tag `v*` ou uma alteração revisada em `.github/release-request.json` integrada à `main`. Também permite reexecução manual selecionando uma tag existente. Um disparo manual sobre uma branch é recusado.
 
-Nos dois caminhos, o build usa o SHA exato do evento e chama o próprio `ci.yml` por `workflow_call`; não troca para uma `main` mais recente. Os testes das ferramentas de release, Windows e Linux precisam passar. O CI verifica `nyrva-hook`, `LICENSE`, `CREDITS.md` e `PROVIDER_GLYPH_NOTICES.md` dentro dos pacotes.
+Nos dois caminhos, o build usa o SHA exato do evento e chama o próprio `ci.yml` por `workflow_call`; não troca para uma `main` mais recente. Os testes das ferramentas de release, Windows e Linux precisam passar. O CI verifica `nyrva-hook`, `nyrva-telemetry`, `LICENSE`, `CREDITS.md` e `PROVIDER_GLYPH_NOTICES.md` dentro dos pacotes.
 
 Depois do build, o fluxo exige exatamente um `.exe`, um `.deb` e um `.AppImage`, rejeita arquivos vazios, duplicados ou com nomes inseguros e gera `SHA256SUMS`. As cópias legíveis dos três avisos também são anexadas e entram no manifesto de hashes.
 
@@ -56,7 +56,7 @@ Execute apenas no commit escolhido e quando a tag ainda não existir. Não crie 
 
 ## Aceite antes da publicação
 
-Acompanhe o workflow **Release** e confira os três pacotes, os avisos e `SHA256SUMS` no rascunho. A existência da tag ou do rascunho não aprova o MVP.
+Acompanhe o workflow **Release** e confira os três pacotes, os avisos e `SHA256SUMS` no rascunho. A existência da tag ou do rascunho não aprova a release 1.0.
 
 Baixe os arquivos com uma conta que tenha acesso e execute [SMOKE_TESTS.md](SMOKE_TESTS.md). Registre tag, SHA do build, execução, hashes, ambientes, resultados e responsável em um PR de evidências. Os arquivos publicados devem ser exatamente os testados.
 
