@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self' ipc: http://ipc.localhost; img-src 'self' data:; object-src 'none'; base-uri 'none'; form-action 'none'">
+  <title>Nyrva — Observatório local</title>
+  <link rel="stylesheet" href="dashboard.css">
+  <script type="module" src="dashboard.mjs"></script>
+</head>
+<body data-layout="compact">
+  <a class="skip-link" href="#main">Ir para o conteúdo</a>
+  <header class="app-header">
+    <div><p class="eyebrow">NYRVA / EXPERIENCE</p><h1>Seu trabalho, em perspectiva.</h1><p class="subtle">Observabilidade local. Cada quota com sua própria origem.</p></div>
+    <button id="refresh" type="button">Atualizar painel</button>
+  </header>
+  <div id="connection" class="connection" role="status">Carregando observações locais…</div>
+  <nav class="tabs" role="tablist" aria-label="Seções do observatório">
+    <button type="button" id="tab-overview" role="tab" aria-selected="true" aria-controls="panel-overview">Visão geral</button>
+    <button type="button" id="tab-sessions" role="tab" aria-selected="false" aria-controls="panel-sessions" tabindex="-1">Sessões</button>
+    <button type="button" id="tab-projects" role="tab" aria-selected="false" aria-controls="panel-projects" tabindex="-1">Projetos e agentes</button>
+    <button type="button" id="tab-history" role="tab" aria-selected="false" aria-controls="panel-history" tabindex="-1">Histórico</button>
+    <button type="button" id="tab-sources" role="tab" aria-selected="false" aria-controls="panel-sources" tabindex="-1">Fontes</button>
+    <button type="button" id="tab-settings" role="tab" aria-selected="false" aria-controls="panel-settings" tabindex="-1">Privacidade e ajustes</button>
+  </nav>
+  <main id="main" tabindex="-1">
+    <section id="panel-overview" role="tabpanel" aria-labelledby="tab-overview">
+      <div class="section-heading"><div><h2>Pulse</h2><p class="subtle">Pressão por provedor, nunca uma porcentagem global.</p></div><span class="local-label">Dados neste dispositivo</span></div>
+      <div id="pulse" class="pulse-grid"></div>
+      <div class="overview-layout">
+        <section class="quota-panel"><h2>Quotas independentes</h2><div id="quota-cards" class="quota-grid"><p class="empty">Aguardando a primeira leitura.</p></div></section>
+        <section class="reset-panel surface"><h2>Próximos resets</h2><p class="subtle">Horário local e confirmação da fonte.</p><div id="reset-list"></div></section>
+      </div>
+      <section class="surface alert-panel"><h2>Central de alertas</h2><p class="subtle">Eventos locais deduplicados. Silêncio e limites ficam em Privacidade e ajustes.</p><div id="alerts-list"></div></section>
+    </section>
+    <section id="panel-sessions" role="tabpanel" aria-labelledby="tab-sessions" hidden>
+      <h2>Sessões observadas</h2><p class="subtle">Metadados explicitamente informados pela fonte. Quota compartilhada não é atribuída a uma sessão.</p>
+      <label class="field">Filtrar sessões<input id="session-filter" type="search" maxlength="120" placeholder="Projeto, modelo ou identificador"></label>
+      <p id="session-summary" class="subtle"></p><div id="sessions-table" class="table-wrap"></div>
+    </section>
+    <section id="panel-projects" role="tabpanel" aria-labelledby="tab-projects" hidden>
+      <h2>Projetos</h2><p class="subtle">Custos estimados das sessões observadas, não cobrança nem medida de produtividade.</p><div id="projects-list" class="card-grid"></div>
+      <h2>Relações entre agentes</h2><p class="subtle">Somente vínculos relatados e resolvidos. Relações ausentes ou cíclicas não são inferidas.</p><div id="agents-list" class="table-wrap"></div>
+    </section>
+    <section id="panel-history" role="tabpanel" aria-labelledby="tab-history" hidden>
+      <h2>Histórico e ritmo de consumo</h2><p class="subtle">Selecione exatamente um provedor, uma conta, uma fonte e uma quota. Resets separam as séries.</p>
+      <form id="history-form" class="form-row">
+        <label class="field grow">Quota e origem<select id="history-query" required></select></label>
+        <label class="field">Período<select id="history-hours"><option value="1">Última hora</option><option value="24" selected>Últimas 24 horas</option><option value="168">Últimos 7 dias</option><option value="720">Últimos 30 dias</option></select></label>
+        <button type="submit">Consultar histórico</button>
+      </form><div id="history-results" aria-live="polite"></div>
+    </section>
+    <section id="panel-sources" role="tabpanel" aria-labelledby="tab-sources" hidden>
+      <h2>Saúde das fontes</h2><p class="subtle">Recência da observação não significa verificação independente com o provedor. Uma falha mantém a última leitura identificada.</p><div id="sources-list" class="card-grid"></div>
+    </section>
+    <section id="panel-settings" role="tabpanel" aria-labelledby="tab-settings" hidden>
+      <h2>Privacy Center</h2><p class="subtle">Este painel não lê credenciais, prompts, respostas ou comandos de ferramentas. Preferências e histórico pertencem ao Nyrva.</p>
+      <form id="preferences-form"><fieldset id="preference-fields" disabled><legend>Preferências neste dispositivo</legend>
+        <div class="form-grid">
+          <label class="field">Layout do painel<select id="layout"><option value="compact">Compacto</option><option value="bars">Barras</option><option value="reset-first">Reset primeiro</option></select></label>
+          <label class="field">Retenção em dias<input id="retention" type="number" min="1" max="365" step="1" required></label>
+          <label class="field">Reserva por quota (%)<input id="reserve" type="number" min="0" max="100" step="0.1" required></label>
+          <label class="check"><input id="metadata" type="checkbox">Incluir metadados de sessão nas novas gravações e visões</label>
+        </div>
+        <h3>Provedores incluídos no painel e no novo histórico</h3>
+        <div class="checks"><label class="check"><input class="provider-check" type="checkbox" value="claude">Claude</label><label class="check"><input class="provider-check" type="checkbox" value="codex">Codex</label><label class="check"><input class="provider-check" type="checkbox" value="cursor">Cursor</label><label class="check"><input class="provider-check" type="checkbox" value="antigravity">Antigravity</label></div>
+        <p class="hint">Estes controles filtram as visões e novas gravações do observatório; não desligam os coletores legados do notch. Desativar metadados não apaga gravações antigas: use a limpeza abaixo. Arquivos dos provedores não são alterados.</p>
+        <h3>Alertas</h3><div class="form-grid"><label class="check"><input id="alerts-enabled" type="checkbox">Ativar alertas locais</label><label class="field">Limites de quota restante (%)<input id="thresholds" type="text" maxlength="80" placeholder="20, 10" required></label></div>
+        <p id="quiet-status" class="hint"></p><div class="actions"><button id="silence" type="button">Silenciar por 1 hora</button><button id="resume-alerts" type="button">Retomar alertas</button></div>
+        <h3>Apelidos de contas</h3><p class="hint">São apenas nomes de exibição; não mudam a conta ativa nem credenciais. Formato: um objeto JSON com identificador e apelido.</p><label class="field">Apelidos locais<textarea id="aliases" rows="3" maxlength="16000" spellcheck="false" placeholder='{"active":"Pessoal"}'></textarea></label>
+        <div class="actions"><button class="primary" type="submit">Salvar preferências</button><span id="unsaved" class="hint" role="status"></span></div>
+      </fieldset></form>
+      <section class="surface"><h3>Preferências portáveis</h3><p class="hint">Somente preferências validadas. Sem credenciais, histórico ou dados de sessão. Exportar preenche o campo; importar só ocorre após sua ação explícita.</p>
+        <label class="field">JSON de preferências<textarea id="portable-settings" rows="6" maxlength="32768" spellcheck="false"></textarea></label>
+        <div class="actions"><button id="export" type="button">Exportar preferências</button><button id="import" type="button">Importar e aplicar</button><button id="rollback" type="button">Restaurar preferências anteriores</button></div>
+      </section>
+      <section class="surface danger-zone"><h3>Limpeza local</h3><p>A limpeza remove o histórico SQLite e os alertas do Nyrva. Preserva preferências e arquivos dos provedores.</p><p class="hint">Leituras em cache continuam disponíveis e a coleta pode gerar novo histórico. Para evitar novas gravações de um provedor, desative sua inclusão antes de limpar.</p><button id="clear" class="danger" type="button">Limpar histórico do Nyrva</button></section>
+      <p id="settings-result" class="feedback" role="status"></p>
+    </section>
+  </main>
+  <footer>NYRVA · Observatório local · Dados ausentes não são zero · Nenhuma troca automática de conta ou modelo</footer>
+  <dialog id="clear-dialog" aria-labelledby="clear-title"><h2 id="clear-title">Limpar o histórico local?</h2><p>Remove observações e alertas do Nyrva. Esta ação não pode ser desfeita. Credenciais e preferências são preservadas.</p><div class="actions"><button id="clear-cancel" type="button" autofocus>Cancelar</button><button id="clear-confirm" class="danger" type="button">Confirmar limpeza</button></div><p id="clear-result" role="alert"></p></dialog>
+</body>
+</html>
