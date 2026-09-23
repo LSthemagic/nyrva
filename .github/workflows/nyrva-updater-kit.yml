@@ -1,0 +1,48 @@
+name: Nyrva updater verification dependencies
+on:
+  push:
+    branches: [feat/nyrva-1.0]
+    paths: [.github/workflows/nyrva-updater-kit.yml]
+permissions:
+  contents: read
+jobs:
+  kit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Fetch the locked baseline
+        run: |
+          cargo fetch --locked
+          find "$HOME/.cargo/registry/cache" -type f -name '*.crate' -printf '%f\n' | sort > /tmp/before-crates.txt
+      - name: Resolve the official Tauri updater and capture only added crates
+        run: |
+          cargo add tauri-plugin-updater@2 --package nyrva
+          cargo fetch --locked
+          mkdir -p updater-kit/registry/cache updater-kit/registry/index
+          cp Cargo.lock updater-kit/Cargo.lock
+          cp -a "$HOME/.cargo/registry/index/." updater-kit/registry/index/
+          python - <<'PY'
+          from pathlib import Path
+          import shutil
+          before = set(Path('/tmp/before-crates.txt').read_text().splitlines())
+          cache = Path.home() / '.cargo/registry/cache'
+          for source in cache.glob('*/*.crate'):
+              if source.name not in before:
+                  target = Path('updater-kit/registry/cache') / source.parent.name / source.name
+                  target.parent.mkdir(parents=True, exist_ok=True)
+                  shutil.copyfile(source, target)
+          PY
+          tar -czf updater-verification-kit.tar.gz -C updater-kit .
+          sha256sum updater-verification-kit.tar.gz > updater-verification-kit.sha256
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ny rva-updater-kit
+          path: |
+            updater-verification-kit.tar.gz
+            updater-verification-kit.sha256
+          retention-days: 2
+          if-no-files-found: error
