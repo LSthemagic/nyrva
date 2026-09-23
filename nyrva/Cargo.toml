@@ -1,6 +1,6 @@
 [package]
 name = "nyrva"
-version = "0.3.0"
+version = "1.0.0"
 edition = "2021"
 description = "Nyrva — edge-pinned AI coding usage monitor for Windows and Linux"
 license = "MIT"
