@@ -34,6 +34,27 @@ jobs:
           name: experience-presentation
           path: experience-evidence/
           retention-days: 7
+  bridge:
+    name: Shared desktop facade contracts
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Exercise the actual desktop data facade
+        run: |
+          set -o pipefail
+          mkdir -p experience-evidence
+          cargo test -p nyrva-core --locked --test experience_bridge 2>&1 | tee experience-evidence/bridge.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: experience-bridge
+          path: experience-evidence/
+          retention-days: 7
   browser:
     name: Experience browser E2E (not native acceptance)
     runs-on: ubuntu-22.04
