@@ -16,7 +16,7 @@ def resolve_release(root: Path, event_name: str, ref_type: str, ref_name: str) -
     if event_name in ("push", "workflow_dispatch") and ref_type == "tag":
         tag = ref_name
         create_tag = False
-    elif event_name == "push" and ref_type == "branch" and ref_name == "main":
+    elif event_name in ("push", "workflow_dispatch") and ref_type == "branch" and ref_name == "main":
         request = json.loads((root / ".github/release-request.json").read_text(encoding="utf-8"))
         if not isinstance(request, dict) or set(request) != {"tag"} or not isinstance(request["tag"], str):
             raise ValueError("Request must contain only a string tag")
