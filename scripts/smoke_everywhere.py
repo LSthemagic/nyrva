@@ -12,6 +12,17 @@ import tempfile
 import time
 
 
+def windows_powershell_environment(inherited: dict[str, str] | None = None) -> dict[str, str]:
+    """Let Windows PowerShell rebuild its module path, even below Python/pwsh.
+
+    A PowerShell 7 PSModulePath inherited through an intermediate process can
+    select incompatible built-in modules in Windows PowerShell 5.1. Only the
+    child environment changes; data-root and home isolation are preserved.
+    """
+    source = os.environ if inherited is None else inherited
+    return {key: value for key, value in source.items() if key.upper() != 'PSMODULEPATH'}
+
+
 def read_http_response(connection: socket.socket) -> bytes:
     """Read one bounded Content-Length response, not the TCP connection lifetime.
 
@@ -140,8 +151,10 @@ def run(binary: Path, output: Path | None) -> None:
             else:
                 # Inspect the actual file ACL, without printing the token or changing permissions.
                 q = str(session_file).replace("'", "''")
-                script = f"$a=Get-Acl -LiteralPath '{q}'; if(-not $a.AreAccessRulesProtected -or @($a.Access).Count -ne 1){{exit 1}}"
-                assert subprocess.run(['powershell','-NoProfile','-NonInteractive','-Command',script],capture_output=True,timeout=10).returncode == 0
+                script = f"$ErrorActionPreference='Stop'; $a=Get-Acl -LiteralPath '{q}'; if(-not $a.AreAccessRulesProtected -or @($a.Access).Count -ne 1){{exit 1}}"
+                probe = subprocess.run(['powershell.exe','-NoProfile','-NonInteractive','-Command',script],
+                                       env=windows_powershell_environment(), capture_output=True, timeout=10)
+                assert probe.returncode == 0, f'private session ACL verification failed: {probe.stderr[:2000].decode(errors="replace")}'
             host, port = session['address'].split(':')
             def request(path: str, *, token: bool = True, origin: bool = False, method: str = 'GET') -> bytes:
                 with socket.create_connection((host,int(port)),timeout=3) as c:

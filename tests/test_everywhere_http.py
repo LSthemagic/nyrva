@@ -44,5 +44,22 @@ class EverywhereHttpTests(unittest.TestCase):
                 SMOKE.read_http_response(self.connection(b'HTTP/1.1 200 OK\r\n' + headers + b'\r\n{}', close=True))
 
 
+class PowerShellEnvironmentTests(unittest.TestCase):
+    def test_intermediate_host_does_not_leak_incompatible_module_paths(self):
+        inherited = {'Path': 'keep', 'PsModulePath': 'PowerShell7/Modules',
+                     'HOME': 'synthetic', 'NYRVA_DATA_DIR': 'isolated'}
+        original = dict(inherited)
+        child = SMOKE.windows_powershell_environment(inherited)
+        self.assertEqual(child, {'Path': 'keep', 'HOME': 'synthetic',
+                                 'NYRVA_DATA_DIR': 'isolated'})
+        self.assertEqual(inherited, original)
+
+    def test_all_casings_are_removed_without_changing_other_environment(self):
+        inherited = {'PSMODULEPATH': 'a', 'psmodulepath': 'b',
+                     'PSModulePathSuffix': 'preserve', 'SystemRoot': 'windows'}
+        self.assertEqual(SMOKE.windows_powershell_environment(inherited),
+                         {'PSModulePathSuffix': 'preserve', 'SystemRoot': 'windows'})
+
+
 if __name__ == '__main__':
     unittest.main()

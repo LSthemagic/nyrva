@@ -48,6 +48,14 @@ jobs:
           result=$?
           tail -90 evidence/core.log
           exit $result
+      - name: PowerShell-parent regression for Python contracts and the real CLI
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          python -m unittest discover -s tests -p 'test_everywhere_http.py' -v
+          if ($LASTEXITCODE -ne 0) { throw 'HTTP and PowerShell regression failed' }
+          python scripts/smoke_everywhere.py --binary target/debug/nyrva-telemetry.exe --output evidence/powershell-parent.json
+          if ($LASTEXITCODE -ne 0) { throw 'PowerShell-parent acceptance failed' }
       - uses: actions/upload-artifact@v4
         if: always()
         with:
