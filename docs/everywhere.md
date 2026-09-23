@@ -29,7 +29,7 @@ Em um terminal interativo, `top` atualiza as observações em cache. Digite `s` 
 
 ## Statusline opt-in
 
-São suportados os pontos documentados de Claude (`~/.claude/settings.json`) e Antigravity (`~/.gemini/antigravity-cli/settings.json`). Não é criado um slot fictício de statusline para Codex/Cursor. Suas observações existentes continuam consultáveis.
+Claude (`~/.claude/settings.json`) e Antigravity (`~/.gemini/antigravity-cli/settings.json`) usam statuslines command-backed. Codex usa sua **statusline nativa**: a Nyrva gerencia somente os componentes `five-hour-limit` e `weekly-limit` através de `codex app-server`, preservando os demais itens. Cursor continua sem um slot de statusline suportado; suas observações permanecem consultáveis.
 
 No Linux, indique o caminho absoluto do executável instalado:
 
@@ -52,7 +52,17 @@ Substitua `claude` por `antigravity` para a outra integração. `--home` permite
 
 `plan` não escreve nada. Se existir uma `statusLine`, `install` exige também `--replace`; nunca executa nem encadeia o comando anterior automaticamente. Apenas o campo `statusLine` é gerenciado. Os demais campos são preservados semanticamente, embora a formatação JSON possa mudar. JSON inválido, chaves duplicadas e caminhos indiretos são recusados.
 
-A remoção restaura somente o campo gerenciado. Se o usuário alterou a statusline depois da instalação, o Nyrva recusa sobrescrevê-la. Instalações repetidas são idempotentes. Recibos privados em `telemetry/integrations` permitem recuperação de interrupções; não devem ser copiados entre computadores nem incluídos em exports. A pasta e o executável escolhidos precisam continuar existindo: após mover a instalação, remova explicitamente a integração antiga e configure a nova.
+Para Codex:
+
+```sh
+nyrva-telemetry integrations plan codex
+nyrva-telemetry integrations install codex --apply
+nyrva-telemetry integrations remove codex --apply
+```
+
+`plan` consulta a configuração efetiva sem escrever. `install` adiciona apenas `five-hour-limit` e `weekly-limit` à lista existente; `remove` remove somente esses dois componentes. A escrita usa a API de configuração do próprio Codex com versão esperada, recusa conflitos e confirma a configuração efetiva depois da mudança. `--executable`, `--account` e `--replace` não se aplicam ao Codex. Reabra o Codex após uma alteração.
+
+A remoção de Claude/Antigravity restaura somente o campo gerenciado. Se o usuário alterou a statusline depois da instalação, o Nyrva recusa sobrescrevê-la. Instalações repetidas são idempotentes. Recibos privados em `telemetry/integrations` permitem recuperação de interrupções; não devem ser copiados entre computadores nem incluídos em exports. A pasta e o executável escolhidos precisam continuar existindo: após mover a instalação, remova explicitamente a integração antiga e configure a nova.
 
 ## Preferências, privacidade e manutenção
 

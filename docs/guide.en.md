@@ -114,6 +114,18 @@ $cli = (Resolve-Path '.\nyrva-telemetry.exe').Path
 
 Replace `claude` with `antigravity`. If a statusline already exists, Nyrva requires explicit `--replace`. Unrelated fields are preserved; if you manually edit the managed statusline later, Nyrva refuses to silently overwrite your change.
 
+### Codex
+
+Codex uses its own native status line. Nyrva adds the native `five-hour-limit` and `weekly-limit` indicators without replacing the user's other selected items:
+
+```powershell
+nyrva-telemetry integrations plan codex
+nyrva-telemetry integrations install codex --apply
+nyrva-telemetry integrations remove codex --apply
+```
+
+The change goes through the official `codex app-server` API with config version checks and effective-config verification. `remove` removes only the two indicators managed by Nyrva. Reopen Codex to see the updated line.
+
 ## 7. Settings, privacy and alerts
 
 ```bash

@@ -11,8 +11,9 @@ use serde::{
 use serde_json::{json, Value};
 use std::{
     fmt, fs,
-    io::Write,
+    io::{BufRead, BufReader, Write},
     path::{Path, PathBuf},
+    process::{Child, ChildStdin, ChildStdout, Command, Stdio},
 };
 const LIMIT: usize = 256 * 1024;
 #[derive(Serialize, Deserialize)]
@@ -123,6 +124,81 @@ fn home() -> Result<PathBuf, String> {
         .map(PathBuf::from)
         .ok_or_else(|| "cannot resolve home; pass --home".into())
 }
+
+const CODEX_ITEMS: [&str; 2] = ["five-hour-limit", "weekly-limit"];
+const CODEX_DEFAULT_ITEMS: [&str; 3] = ["model-with-reasoning", "current-dir", "thread-name"];
+struct CodexServer { child: Child, input: ChildStdin, output: BufReader<ChildStdout>, next_id: u64 }
+impl CodexServer {
+    fn start(home: &Path) -> Result<Self, String> {
+        let mut command = if cfg!(windows) {
+            let mut c = Command::new(std::env::var_os("COMSPEC").unwrap_or_else(|| "cmd.exe".into()));
+            c.args(["/d", "/s", "/c", "codex app-server"]); c
+        } else { let mut c = Command::new("codex"); c.arg("app-server"); c };
+        command.current_dir(home).env("CODEX_HOME", home).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::null());
+        #[cfg(windows)] { use std::os::windows::process::CommandExt; command.creation_flags(0x08000000); }
+        let mut child = command.spawn().map_err(|_| "cannot start Codex; verify codex --version works")?;
+        let input = child.stdin.take().ok_or("cannot open Codex app-server input")?;
+        let output = BufReader::new(child.stdout.take().ok_or("cannot open Codex app-server output")?);
+        let mut server = Self { child, input, output, next_id: 0 };
+        server.request("initialize", json!({"clientInfo":{"name":"nyrva","version":"1.0.0"},"capabilities":{"experimentalApi":true}}))?;
+        writeln!(server.input, "{}", json!({"method":"initialized","params":{}})).map_err(|_| "cannot initialize Codex app-server")?;
+        server.input.flush().map_err(|_| "cannot initialize Codex app-server")?;
+        Ok(server)
+    }
+    fn request(&mut self, method: &str, params: Value) -> Result<Value, String> {
+        self.next_id += 1; let id = self.next_id;
+        writeln!(self.input, "{}", json!({"id":id,"method":method,"params":params})).map_err(|_| "Codex app-server connection closed")?;
+        self.input.flush().map_err(|_| "Codex app-server connection closed")?;
+        let mut line = String::new();
+        loop {
+            line.clear();
+            if self.output.read_line(&mut line).map_err(|_| "cannot read Codex app-server response")? == 0 { return Err("Codex app-server exited before responding".into()); }
+            let Ok(message) = serde_json::from_str::<Value>(&line) else { continue };
+            if message.get("id").and_then(Value::as_u64) != Some(id) { continue; }
+            if let Some(error) = message.get("error") { return Err(format!("Codex rejected configuration request: {}", error.get("message").and_then(Value::as_str).unwrap_or("unknown error"))); }
+            return Ok(message.get("result").cloned().unwrap_or(Value::Null));
+        }
+    }
+}
+impl Drop for CodexServer { fn drop(&mut self) { let _=self.input.flush(); let _=self.child.kill(); let _=self.child.wait(); } }
+fn codex_items(config: &Value) -> Result<Vec<String>, String> {
+    match config.pointer("/tui/status_line") {
+        None => Ok(CODEX_DEFAULT_ITEMS.iter().map(|v| (*v).into()).collect()),
+        Some(Value::Array(items)) if items.iter().all(Value::is_string) => Ok(items.iter().map(|v| v.as_str().unwrap().to_string()).collect()),
+        Some(_) => Err("Codex tui.status_line is not a string list; no change made".into()),
+    }
+}
+fn codex_user_layer(read: &Value) -> Result<(String,String),String> {
+    for layer in read.get("layers").and_then(Value::as_array).into_iter().flatten() {
+        let name=&layer["name"];
+        if name["type"]=="user" && name.get("profile").is_none_or(Value::is_null) {
+            return Ok((name["file"].as_str().ok_or("Codex user config path is unavailable")?.into(),layer["version"].as_str().ok_or("Codex user config version is unavailable")?.into()));
+        }
+    }
+    Err("Codex did not expose a writable user configuration; update Codex and retry".into())
+}
+fn codex_run(action:&str,flags:&Flags,out:&mut dyn Write)->Result<(),String>{
+    if flags.get("--executable").is_some()||flags.get("--account").is_some()||flags.has("--replace"){return Err("Codex native statusline does not accept --executable, --account or --replace".into());}
+    let home=flags.get("--home").map(PathBuf::from).map(Ok).unwrap_or_else(||std::env::var_os("CODEX_HOME").map(PathBuf::from).or_else(||home().ok().map(|h|h.join(".codex"))).ok_or_else(||"cannot resolve CODEX_HOME; pass --home".into()))?;
+    path_text(&home)?;
+    let mut server=CodexServer::start(&home)?;
+    let before=server.request("config/read",json!({"includeLayers":true}))?;
+    let (file,version)=codex_user_layer(&before)?;
+    let current=codex_items(&before["config"])?; let mut desired=current.clone();
+    if action=="remove"{desired.retain(|item|!CODEX_ITEMS.contains(&item.as_str()));}else{
+        let missing:Vec<_>=CODEX_ITEMS.iter().filter(|item|!desired.iter().any(|v|v==**item)).copied().collect();
+        if !missing.is_empty(){let model=desired.iter().position(|v|["model-with-reasoning","model","model-name"].contains(&v.as_str()));let five=desired.iter().position(|v|v=="five-hour-limit");let weekly=desired.iter().position(|v|v=="weekly-limit");let at=weekly.or_else(||five.map(|i|i+1)).unwrap_or_else(||model.map(|i|i+1).unwrap_or(0));for(offset,item)in missing.iter().enumerate(){desired.insert(at+offset,(*item).into());}}
+    }
+    if action=="plan"{return cli::write_json(out,&json!({"schema_version":1,"provider":"codex","settings_file":file,"owned_items":CODEX_ITEMS,"current":current,"planned":desired,"requires_confirmation":true,"authentication_used":false,"native_statusline":true,"changed":current!=desired}));}
+    if current==desired{return cli::write_json(out,&json!({"schema_version":1,"provider":"codex","installed":action=="install","changed":false,"native_statusline":true}));}
+    let result=server.request("config/batchWrite",json!({"edits":[{"keyPath":"tui.status_line","value":desired,"mergeStrategy":"replace"}],"filePath":file,"expectedVersion":version,"reloadUserConfig":true}))?;
+    let status=result.get("status").and_then(Value::as_str).unwrap_or("");
+    if status=="okOverridden"{return Err("Codex wrote the user config, but a higher-precedence profile/policy overrides it".into());}
+    if status!="ok"{return Err("Codex did not confirm the statusline change".into());}
+    let after=server.request("config/read",json!({"includeLayers":false}))?;
+    if codex_items(&after["config"])?!=desired{return Err("Codex effective statusline differs after write; check profiles or managed policy".into());}
+    cli::write_json(out,&json!({"schema_version":1,"provider":"codex","installed":action=="install","changed":true,"native_statusline":true,"items":desired,"provider_authentication_modified":false}))
+}
 pub(crate) fn run(args: &[String], root: &Path, out: &mut dyn Write) -> Result<(), String> {
     let action = args
         .first()
@@ -135,7 +211,7 @@ pub(crate) fn run(args: &[String], root: &Path, out: &mut dyn Write) -> Result<(
         .get(1)
         .map(String::as_str)
         .ok_or("integration requires a provider")?;
-    let relative = match provider { "claude" => ".claude/settings.json", "antigravity" => ".gemini/antigravity-cli/settings.json", _ => return Err("custom statusline integration is supported only for Claude and Antigravity; no slot is invented for other providers".into()) };
+    let relative = match provider { "claude" => ".claude/settings.json", "antigravity" => ".gemini/antigravity-cli/settings.json", "codex" => "", _ => return Err("statusline integration is supported only for Claude, Antigravity and Codex".into()) };
     let flags = Flags::parse(
         &args[2..],
         &["--home", "--executable", "--account"],
@@ -149,6 +225,9 @@ pub(crate) fn run(args: &[String], root: &Path, out: &mut dyn Write) -> Result<(
     }
     if action != "plan" && !flags.has("--apply") {
         return Err("integration mutation requires --apply".into());
+    }
+    if provider == "codex" {
+        return codex_run(action, &flags, out);
     }
     let home = flags
         .get("--home")
