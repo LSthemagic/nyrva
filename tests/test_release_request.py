@@ -69,10 +69,20 @@ class ReleaseRequestTests(unittest.TestCase):
     def test_feature_branch_is_rejected(self):
         self.reject(self.run_cli(ref_name="feat/release"), "Unsupported release event")
 
-    def test_pull_request_and_branch_dispatch_are_rejected(self):
-        for event in ("pull_request", "pull_request_target", "workflow_dispatch", "workflow_run"):
+    def test_main_workflow_dispatch_uses_reviewed_request(self):
+        result = self.run_cli(event="workflow_dispatch")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout), {
+            "tag": "v0.3.0", "create_tag": True,
+            "notes": "docs/releases/v0.3.0.md"})
+
+    def test_pull_request_and_other_branch_events_are_rejected(self):
+        for event in ("pull_request", "pull_request_target", "workflow_run"):
             with self.subTest(event=event):
                 self.reject(self.run_cli(event=event), "Unsupported release event")
+        self.reject(
+            self.run_cli(event="workflow_dispatch", ref_name="feat/release"),
+            "Unsupported release event")
 
     def test_request_schema_rejects_publish_flag_and_invalid_types(self):
         for data in ({"tag": "v0.3.0", "publish": True}, {}, [], {"tag": 3}):
