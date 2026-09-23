@@ -2,7 +2,7 @@ name: Nyrva Experience native
 on:
   push:
     branches: [feat/nyrva-1.0]
-    paths: ['nyrva/**', 'nyrva-core/**', 'Cargo.lock', 'scripts/experience*', '.github/workflows/experience-native.yml']
+    paths: ['nyrva/**', 'nyrva-core/**', 'Cargo.lock', 'tests/experience/native-smoke.js', 'scripts/experience*', '.github/workflows/experience-native.yml']
   pull_request:
 permissions:
   contents: read
@@ -29,7 +29,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev xdg-utils
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev xdg-utils xvfb dbus-x11
       - name: Prepare Linux sidecar
         if: runner.os == 'Linux'
         run: bash scripts/prepare-linux-sidecar.sh debug
@@ -48,6 +48,32 @@ jobs:
         run: |
           set -o pipefail
           cargo test -p nyrva --locked 2>&1 | tee experience-evidence/desktop-tests.log
+      - name: Build native webview acceptance harness
+        shell: bash
+        run: |
+          set -o pipefail
+          cargo build -p nyrva --example experience-smoke --locked 2>&1 | tee experience-evidence/native-build.log
+      - name: Exercise real WebKit, IPC and privacy under Linux X11
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -o pipefail
+          export NYRVA_EXPERIENCE_SMOKE_DIR="$PWD/experience-evidence/data"
+          export GDK_BACKEND=x11
+          export WEBKIT_DISABLE_DMABUF_RENDERER=1
+          timeout 100s dbus-run-session -- xvfb-run -a target/debug/examples/experience-smoke 2>&1 | tee experience-evidence/native-smoke.log
+          python -c 'import json; p=json.load(open("experience-evidence/data/native-smoke.json")); print(json.dumps(p)); assert p["ok"] and p["provider_file_preserved"]'
+      - name: Exercise real WebView2, IPC and privacy on Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $env:NYRVA_EXPERIENCE_SMOKE_DIR = Join-Path $PWD 'experience-evidence/data'
+          $process = Start-Process target/debug/examples/experience-smoke.exe -PassThru -RedirectStandardOutput experience-evidence/native-smoke.log -RedirectStandardError experience-evidence/native-smoke-error.log
+          if (-not $process.WaitForExit(100000)) { $process.Kill(); throw 'native smoke timed out' }
+          if ($process.ExitCode -ne 0) { Get-Content experience-evidence/native-smoke-error.log; throw "native smoke failed: $($process.ExitCode)" }
+          $report = Get-Content experience-evidence/data/native-smoke.json -Raw | ConvertFrom-Json
+          $report | ConvertTo-Json -Depth 6
+          if (-not $report.ok -or -not $report.provider_file_preserved) { throw 'native acceptance failed' }
       - name: Confirm lockfile unchanged
         shell: bash
         run: git diff --exit-code -- Cargo.lock
