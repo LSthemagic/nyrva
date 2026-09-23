@@ -105,13 +105,30 @@ jobs:
           if ($entries -notcontains $installDir.TrimEnd('\')) {
             throw "installer did not add its directory to the user PATH: $userPath"
           }
-          $env:Path = "$installDir;$env:Path"
-          $resolved = (Get-Command nyrva-telemetry.exe -ErrorAction Stop).Source
-          if ([IO.Path]::GetFullPath($resolved) -ne [IO.Path]::GetFullPath((Join-Path $installDir 'nyrva-telemetry.exe'))) {
-            throw "nyrva-telemetry resolves to an unexpected executable: $resolved"
+          # Emulate a genuinely new login/terminal process. The current runner
+          # cannot receive another process' environment mutation, even after
+          # WM_SETTINGCHANGE, so rebuild PATH from the persisted Machine + User values.
+          $machinePath = [Environment]::GetEnvironmentVariable('Path', 'Machine')
+          $freshPath = "$machinePath;$userPath"
+          $probe = @'
+$resolved = (Get-Command nyrva-telemetry.exe -ErrorAction Stop).Source
+$expected = Join-Path $env:NYRVA_EXPECTED_DIR 'nyrva-telemetry.exe'
+if ([IO.Path]::GetFullPath($resolved) -ne [IO.Path]::GetFullPath($expected)) {
+  throw "nyrva-telemetry resolves to an unexpected executable: $resolved"
+}
+& nyrva-telemetry.exe status --json
+if ($LASTEXITCODE -ne 0) { throw 'PATH CLI invocation failed' }
+'@
+          $oldPath = $env:Path
+          $env:Path = $freshPath
+          $env:NYRVA_EXPECTED_DIR = $installDir
+          try {
+            $probe | powershell.exe -NoProfile -NonInteractive -Command - | Set-Content -Encoding utf8 target/everywhere-evidence/path-cli.json
+            if ($LASTEXITCODE -ne 0) { throw 'fresh-process PATH CLI invocation failed' }
+          } finally {
+            $env:Path = $oldPath
+            Remove-Item Env:NYRVA_EXPECTED_DIR -ErrorAction SilentlyContinue
           }
-          & nyrva-telemetry.exe status --json | Set-Content -Encoding utf8 target/everywhere-evidence/path-cli.json
-          if ($LASTEXITCODE -ne 0) { throw 'PATH CLI invocation failed' }
 
           python scripts/smoke_everywhere.py --binary (Join-Path $installDir 'nyrva-telemetry.exe') --output target/everywhere-evidence/installed-cli.json
           if ($LASTEXITCODE -ne 0) { throw 'installed CLI acceptance failed' }
