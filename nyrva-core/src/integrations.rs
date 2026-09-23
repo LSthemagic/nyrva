@@ -203,6 +203,39 @@ fn codex_run(action:&str,flags:&Flags,out:&mut dyn Write)->Result<(),String>{
     if codex_items(&after["config"])?!=desired{return Err("Codex effective statusline differs after write; check profiles or managed policy".into());}
     cli::write_json(out,&json!({"schema_version":1,"provider":"codex","installed":action=="install","changed":true,"native_statusline":true,"items":desired,"provider_authentication_modified":false}))
 }
+#[cfg(test)]
+mod codex_statusline_tests {
+    use super::codex_items;
+    use serde_json::json;
+
+    #[test]
+    fn codex_statusline_absent_uses_native_defaults() {
+        assert_eq!(
+            codex_items(&json!({})).unwrap(),
+            vec!["model-with-reasoning", "current-dir", "thread-name"]
+        );
+    }
+
+    #[test]
+    fn codex_statusline_null_is_explicitly_disabled() {
+        assert!(codex_items(&json!({"tui":{"status_line":null}})).unwrap().is_empty());
+    }
+
+    #[test]
+    fn codex_statusline_string_list_is_preserved() {
+        assert_eq!(
+            codex_items(&json!({"tui":{"status_line":["model","current-dir"]}})).unwrap(),
+            vec!["model", "current-dir"]
+        );
+    }
+
+    #[test]
+    fn codex_statusline_rejects_non_string_values() {
+        assert!(codex_items(&json!({"tui":{"status_line":[1]}})).is_err());
+        assert!(codex_items(&json!({"tui":{"status_line":"model"}})).is_err());
+    }
+}
+
 pub(crate) fn run(args: &[String], root: &Path, out: &mut dyn Write) -> Result<(), String> {
     let action = args
         .first()
