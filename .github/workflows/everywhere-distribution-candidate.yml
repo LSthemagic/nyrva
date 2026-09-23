@@ -1,0 +1,92 @@
+name: Verify Everywhere distribution candidate
+on:
+  push:
+    branches: [feat/everywhere]
+    paths: [.github/everywhere-distribution.json]
+permissions:
+  contents: read
+jobs:
+  verify:
+    if: github.repository == 'LSthemagic/nyrva' && github.ref == 'refs/heads/feat/everywhere'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Validate exact patch and allowed paths
+        run: |
+          python - <<'PY'
+          import base64,gzip,hashlib,io,json,pathlib,subprocess
+          v=json.loads(pathlib.Path('.github/everywhere-distribution.json').read_text())
+          assert set(v)=={'base','sha256'} and v['base']=='bd255ddeaa919b34c30fc34a0cd1e74beb3e5690'
+          subprocess.run(['git','merge-base','--is-ancestor',v['base'],'HEAD'],check=True)
+          encoded=''.join(pathlib.Path(f'.github/everywhere-dist-{i}.b64').read_text().strip() for i in (1,2))
+          assert len(encoded)<65536
+          with gzip.GzipFile(fileobj=io.BytesIO(base64.b64decode(encoded,validate=True))) as f: patch=f.read(1048577)
+          assert len(patch)<1048576 and hashlib.sha256(patch).hexdigest()==v['sha256']
+          allowed=set('''.github/workflows/ci.yml
+          .github/workflows/everywhere.yml
+          .github/workflows/experience-close.yml
+          .gitignore
+          docs/everywhere.md
+          nyrva-core/src/integrations.rs
+          nyrva-core/tests/everywhere_extended.rs
+          nyrva/src/telemetry.rs
+          nyrva/tauri.linux.conf.json
+          nyrva/tauri.windows.conf.json
+          nyrva/tests/everywhere_entrypoints.rs
+          scripts/prepare-linux-sidecar.sh
+          scripts/prepare-windows-sidecar.ps1
+          scripts/smoke_everywhere.py'''.splitlines())
+          p=pathlib.Path('/tmp/distribution.patch');p.write_bytes(patch)
+          subprocess.run(['git','apply','--check',str(p)],check=True)
+          subprocess.run(['git','apply',str(p)],check=True)
+          changed=subprocess.check_output(['git','status','--porcelain','--untracked-files=all']).decode().splitlines()
+          for line in changed:
+              assert line[3:] in allowed, 'path outside scope: '+line
+              assert not pathlib.Path(line[3:]).is_symlink()
+          subprocess.run(['git','add','--',*sorted(allowed)],check=True)
+          subprocess.run(['git','diff','--cached','--check'],check=True)
+          PY
+      - name: Actual core and subprocess verification
+        run: |
+          set -o pipefail
+          mkdir -p candidate-evidence
+          cargo test -p nyrva-core --locked --no-fail-fast 2>&1 | tee candidate-evidence/core.log
+          cargo build -p nyrva-core --bin nyrva-telemetry --locked
+          python scripts/smoke_everywhere.py --binary target/debug/nyrva-telemetry --output candidate-evidence/everywhere.json
+          python -m unittest discover -s tests -p 'test_*.py' -v > candidate-evidence/release-tools.log 2>&1
+      - name: Remove one-shot transport
+        run: git rm .github/everywhere-distribution.json .github/everywhere-dist-{1,2}.b64 .github/workflows/everywhere-distribution-candidate.yml
+      - name: Create candidate without moving any branch
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs=require('fs'),cp=require('child_process');
+            const {owner,repo}=context.repo,parent=context.sha;
+            const current=await github.rest.git.getCommit({owner,repo,commit_sha:parent});
+            const changed=cp.execFileSync('git',['diff','--cached','--name-only','-z']).toString().split('\0').filter(Boolean);
+            const entries=[];
+            for(const path of changed){
+              if(!fs.existsSync(path)){if(!path.startsWith('.github/everywhere-')&&path!=='.github/workflows/everywhere-distribution-candidate.yml')throw Error('unexpected deletion');entries.push({path,mode:'100644',type:'blob',sha:null});continue;}
+              const mode=cp.execFileSync('git',['ls-files','-s','--',path]).toString().slice(0,6);
+              if(!['100644','100755'].includes(mode))throw Error('unexpected file mode');
+              const blob=await github.rest.git.createBlob({owner,repo,content:fs.readFileSync(path).toString('base64'),encoding:'base64'});
+              entries.push({path,mode,type:'blob',sha:blob.data.sha});
+            }
+            const tree=await github.rest.git.createTree({owner,repo,base_tree:current.data.tree.sha,tree:entries});
+            const commit=await github.rest.git.createCommit({owner,repo,message:'feat(everywhere): connect desktop, portable shells and installed package acceptance',tree:tree.data.sha,parents:[parent]});
+            fs.writeFileSync('candidate-evidence/candidate.json',JSON.stringify({parent,commit:commit.data.sha,tree:tree.data.sha,paths:changed,ref_updated:false},null,2));
+            core.notice(`Candidate ${commit.data.sha}; no refs updated`);
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: everywhere-distribution-candidate
+          path: candidate-evidence/
+          retention-days: 7
