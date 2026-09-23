@@ -111,7 +111,7 @@ fn path_text(path: &Path) -> Result<String, String> {
         {
             return Err("integration path is unsafe for the Windows command shell".into());
         }
-        Ok(format!("\"{}\"", text.replace('\\', "/")))
+        Ok(format!("'{}'", text.replace('\\', "/").replace('\'', "''")))
     }
     #[cfg(not(windows))]
     {
@@ -172,7 +172,19 @@ pub(crate) fn run(args: &[String], root: &Path, out: &mut dyn Write) -> Result<(
         if !executable.is_file() {
             return Err("integration executable does not exist".into());
         }
-        json!({"type":"command","command":format!("{} --data-dir {} statusline {provider} --account {account}",path_text(&executable)?,path_text(root)?)})
+        let native = format!(
+            "{} --data-dir {} statusline {provider} --account {account}",
+            path_text(&executable)?,
+            path_text(root)?
+        );
+        // Claude uses Git Bash or PowerShell on Windows. A quoted executable alone
+        // is an expression in PowerShell; a fixed PowerShell launcher works in both.
+        // Paths reject outer-shell expansion characters and use PS literal quoting.
+        #[cfg(windows)]
+        let command = format!("powershell.exe -NoProfile -NonInteractive -Command \"& {native}\"");
+        #[cfg(not(windows))]
+        let command = native;
+        json!({"type":"command","command":command})
     } else {
         Value::Null
     };

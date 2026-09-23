@@ -26,6 +26,20 @@ pub fn run_cli(args: &[String]) -> Option<i32> {
         "forecast",
         "ingest",
         "statusline",
+        "top",
+        "doctor",
+        "cockpit",
+        "projects",
+        "agents",
+        "settings",
+        "privacy",
+        "alerts",
+        "export",
+        "integrations",
+        "serve",
+        "update",
+        "migrate",
+        "--data-dir",
         "help",
         "--help",
     ]
@@ -37,8 +51,8 @@ pub fn run_cli(args: &[String]) -> Option<i32> {
         cli::run(
             args,
             &root,
-            &mut std::io::stdin().lock(),
-            &mut std::io::stdout().lock(),
+            &mut std::io::stdin(),
+            &mut std::io::stdout(),
         )
     });
     match result {

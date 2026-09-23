@@ -113,8 +113,10 @@ fn repeated_install_is_idempotent_and_generated_command_uses_same_root() {
     };
     #[cfg(windows)]
     let mut c = {
+        use std::os::windows::process::CommandExt;
         let mut c = Command::new("cmd");
-        c.args(["/d", "/s", "/c", command]);
+        // cmd does not use the C argv escaping applied by Command::arg.
+        c.args(["/d", "/s", "/c"]).raw_arg(format!("\"{command}\""));
         c
     };
     let mut child = c

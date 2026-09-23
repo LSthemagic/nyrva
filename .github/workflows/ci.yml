@@ -27,20 +27,35 @@ jobs:
   windows:
     name: Windows Rust workspace
     runs-on: windows-latest
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: experience-completion
+          cache-on-failure: true
       - name: Prepare Windows sidecar
         shell: pwsh
         run: ./scripts/prepare-windows-sidecar.ps1 debug
       - name: Cargo check
-        run: cargo check --workspace
+        run: cargo check --workspace --locked
       - name: Cargo test
-        run: cargo test --workspace
+        run: cargo test --workspace --locked --no-fail-fast
       - name: Build and exercise desktop telemetry commands
         run: |
           cargo build -p nyrva --locked
           python scripts/smoke_telemetry.py --binary target/debug/nyrva.exe --output target/telemetry-smoke.json
+      - name: Everywhere black-box acceptance for desktop and standalone CLI
+        shell: bash
+        run: |
+          mkdir -p target/everywhere-evidence
+          suffix=""
+          if [[ "$RUNNER_OS" == "Windows" ]]; then suffix=".exe"; fi
+          python scripts/smoke_everywhere.py --binary "target/debug/nyrva$suffix" --output target/everywhere-evidence/desktop.json
+          python scripts/smoke_everywhere.py --binary "target/debug/nyrva-telemetry$suffix" --output target/everywhere-evidence/standalone.json
       - name: Install Tauri CLI
         run: cargo install tauri-cli --version "^2.0.0" --locked
       - name: Prepare release sidecar
@@ -66,10 +81,34 @@ jobs:
             Write-Host $manifest
             throw 'NSIS installer does not contain nyrva-hook.exe'
           }
+          if ($manifest -notmatch '(?i)nyrva-telemetry\.exe') { throw 'NSIS installer is missing the standalone CLI' }
           foreach ($notice in @('LICENSE', 'CREDITS.md', 'PROVIDER_GLYPH_NOTICES.md')) {
             $pattern = '(?im)(?:^|[\\/\s])' + [regex]::Escape($notice) + '\r?$'
             if ($manifest -notmatch $pattern) { throw "NSIS installer does not contain $notice" }
           }
+      - name: Install Windows package into an isolated directory and verify both entrypoints
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $installer = Get-ChildItem target/release/bundle/nsis -Filter '*.exe' | Select-Object -First 1
+          $installDir = Join-Path $env:RUNNER_TEMP ('nyrva-package-' + [guid]::NewGuid().ToString())
+          $p = Start-Process -FilePath $installer.FullName -ArgumentList "/S /D=$installDir" -PassThru
+          if (-not $p.WaitForExit(120000)) { $p.Kill(); throw 'isolated installer timed out' }
+          if ($p.ExitCode -ne 0) { throw "isolated installer failed: $($p.ExitCode)" }
+          foreach ($binary in @('nyrva','nyrva-hook','nyrva-telemetry')) {
+            if (-not (Test-Path (Join-Path $installDir "$binary.exe"))) { throw "installed $binary missing" }
+          }
+          python scripts/smoke_everywhere.py --binary (Join-Path $installDir 'nyrva-telemetry.exe') --output target/everywhere-evidence/installed-cli.json
+          if ($LASTEXITCODE -ne 0) { throw 'installed CLI acceptance failed' }
+          python scripts/smoke_everywhere.py --binary (Join-Path $installDir 'nyrva.exe') --output target/everywhere-evidence/installed-desktop.json
+          if ($LASTEXITCODE -ne 0) { throw 'installed desktop acceptance failed' }
+      - name: Preserve Windows acceptance evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: everywhere-distribution-Windows
+          path: target/everywhere-evidence/
+          retention-days: 7
       - name: Upload Windows installer
         uses: actions/upload-artifact@v4
         with:
@@ -80,9 +119,16 @@ jobs:
   linux:
     name: Linux Rust workspace
     runs-on: ubuntu-22.04
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: experience-completion
+          cache-on-failure: true
       - name: Install Tauri Linux dependencies
         run: |
           sudo apt-get update
@@ -102,15 +148,23 @@ jobs:
       - name: Prepare Linux sidecar
         run: bash scripts/prepare-linux-sidecar.sh debug
       - name: Cargo check
-        run: cargo check --workspace
+        run: cargo check --workspace --locked
       - name: Verify Cargo.lock is up to date
         run: git diff --exit-code -- Cargo.lock
       - name: Cargo test
-        run: cargo test --workspace
+        run: cargo test --workspace --locked --no-fail-fast
       - name: Build and exercise desktop telemetry commands without a display
         run: |
           cargo build -p nyrva --locked
           python scripts/smoke_telemetry.py --binary target/debug/nyrva --output target/telemetry-smoke.json
+      - name: Everywhere black-box acceptance for desktop and standalone CLI
+        shell: bash
+        run: |
+          mkdir -p target/everywhere-evidence
+          suffix=""
+          if [[ "$RUNNER_OS" == "Windows" ]]; then suffix=".exe"; fi
+          python scripts/smoke_everywhere.py --binary "target/debug/nyrva$suffix" --output target/everywhere-evidence/desktop.json
+          python scripts/smoke_everywhere.py --binary "target/debug/nyrva-telemetry$suffix" --output target/everywhere-evidence/standalone.json
       - name: Install Tauri CLI
         run: cargo install tauri-cli --version "^2.0.0" --locked
       - name: Prepare release sidecar
@@ -148,6 +202,7 @@ jobs:
             cd "$extract_dir"
             "$appimage" --appimage-extract >/dev/null
           )
+          printf '%s\n' "$extract_dir/squashfs-root" > target/bundle-diagnostics/appimage-root.txt
           find "$extract_dir/squashfs-root" -maxdepth 8 \( -type f -o -type l \) -printf '%M %p\n' \
             > target/bundle-diagnostics/appimage-manifest.txt
       - name: Verify Linux bundles and hook sidecar
@@ -155,6 +210,8 @@ jobs:
           set -euo pipefail
           grep -Eq '[[:space:]]usr/bin/nyrva-hook$' target/bundle-diagnostics/deb-manifest.txt
           grep -Eq '/usr/bin/nyrva-hook$' target/bundle-diagnostics/appimage-manifest.txt
+          grep -Eq '[[:space:]]usr/bin/nyrva-telemetry$' target/bundle-diagnostics/deb-manifest.txt
+          grep -Eq '/usr/bin/nyrva-telemetry$' target/bundle-diagnostics/appimage-manifest.txt
           for notice in LICENSE CREDITS.md PROVIDER_GLYPH_NOTICES.md; do
             for manifest in deb-manifest.txt appimage-manifest.txt; do
               awk -v suffix="/$notice" '
@@ -163,6 +220,30 @@ jobs:
               ' "target/bundle-diagnostics/$manifest"
             done
           done
+      - name: Install Debian package and exercise installed and AppImage-extracted entrypoints
+        run: |
+          set -euo pipefail
+          deb="$(cat target/bundle-diagnostics/deb-path.txt)"
+          sudo dpkg -i "$deb"
+          python scripts/smoke_everywhere.py --binary /usr/bin/nyrva-telemetry --output target/everywhere-evidence/installed-cli.json
+          python scripts/smoke_everywhere.py --binary /usr/bin/nyrva --output target/everywhere-evidence/installed-desktop.json
+          appdir="$(cat target/bundle-diagnostics/appimage-root.txt)"
+          python scripts/smoke_everywhere.py --binary "$appdir/usr/bin/nyrva-telemetry" --output target/everywhere-evidence/appimage-cli.json
+          appimage="$(realpath "$(cat target/bundle-diagnostics/appimage-path.txt)")"
+          root="$(mktemp -d)"
+          NYRVA_DATA_DIR="$root/data" APPIMAGE_EXTRACT_AND_RUN=1 "$appimage" doctor --json > target/everywhere-evidence/appimage-doctor.json
+          python -c 'import json; assert json.load(open("target/everywhere-evidence/appimage-doctor.json"))["schema_version"] == 1'
+          test ! -e "$root/data"
+      - name: Preserve Linux acceptance evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: everywhere-distribution-Linux
+          path: |
+            target/everywhere-evidence/
+            target/bundle-diagnostics/
+            /tmp/tauri-build.log
+          retention-days: 7
       - name: Upload Linux packages
         uses: actions/upload-artifact@v4
         with:

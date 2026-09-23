@@ -54,3 +54,9 @@ jobs:
           name: everywhere-core-${{ runner.os }}
           path: evidence/
           retention-days: 7
+  distribution:
+    name: Complete distribution acceptance
+    uses: ./.github/workflows/ci.yml
+  experience:
+    name: Native Experience regression
+    uses: ./.github/workflows/experience-close.yml
