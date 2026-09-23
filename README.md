@@ -12,9 +12,9 @@ Supports **Windows** and **Linux X11**, with **Claude Code, Codex, Cursor and An
 
 | Platform | Package |
 |---|---|
-| Windows x64 | `Nyrva_1.0.2_x64-setup.exe` |
-| Debian / Ubuntu x86_64 | `Nyrva_1.0.2_amd64.deb` |
-| Linux x86_64 portable | `Nyrva_1.0.2_amd64.AppImage` |
+| Windows x64 | `Nyrva_1.0.3_x64-setup.exe` |
+| Debian / Ubuntu x86_64 | `Nyrva_1.0.3_amd64.deb` |
+| Linux x86_64 portable | `Nyrva_1.0.3_amd64.AppImage` |
 
 [**Download Nyrva v1.0.0**](https://github.com/LSthemagic/nyrva/releases/tag/v1.0.0)
 
