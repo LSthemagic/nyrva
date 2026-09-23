@@ -18,14 +18,14 @@ Baixe em [Releases](https://github.com/LSthemagic/nyrva/releases/tag/v1.0.0).
 
 ### Windows
 
-Baixe `Nyrva_1.0.0_x64-setup.exe` e execute o instalador. O pacote contém o desktop `nyrva.exe`, a CLI `nyrva-telemetry.exe` e o helper `nyrva-hook.exe`.
+Baixe `Nyrva_1.0.1_x64-setup.exe` e execute o instalador. O pacote contém o desktop `nyrva.exe`, a CLI `nyrva-telemetry.exe` e o helper `nyrva-hook.exe`.
 
 Os pacotes 1.0 ainda não possuem assinatura de publicador. Não desative proteções do Windows; confira a origem e o hash em `SHA256SUMS`.
 
 ### Debian / Ubuntu em X11
 
 ```bash
-sudo apt install ./Nyrva_1.0.0_amd64.deb
+sudo apt install ./Nyrva_1.0.1_amd64.deb
 ```
 
 Execute como usuário normal, não como root.
