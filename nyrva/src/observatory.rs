@@ -4,11 +4,20 @@ mod data;
 
 use nyrva_core::{alerts, cli, config};
 use serde_json::{json, Value};
-use std::{path::Path, sync::{atomic::{AtomicU64, Ordering}, Mutex}, time::Duration};
+use std::{path::Path, sync::{atomic::{AtomicBool, AtomicU64, Ordering}, Mutex}, time::Duration};
 use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 
 static OPERATIONS: Mutex<()> = Mutex::new(());
 static REVISION: AtomicU64 = AtomicU64::new(0);
+static OPENING: AtomicBool = AtomicBool::new(false);
+
+/// Release the coalescing flag even if spawning or constructing a window fails.
+struct OpenRequest;
+impl Drop for OpenRequest {
+    fn drop(&mut self) {
+        OPENING.store(false, Ordering::Release);
+    }
+}
 
 fn permitted_url(url: &tauri::Url) -> bool {
     let origin = (url.scheme() == "tauri" && url.host_str() == Some("localhost"))
@@ -99,7 +108,28 @@ pub fn install(app: &AppHandle) -> tauri::Result<()> {
     Ok(())
 }
 
+/// Accept an opening request without blocking the synchronous tray/event callback.
+/// Window construction must run outside that callback on Windows. Repeated requests
+/// are coalesced while the worker creates or restores the single dashboard window.
+/// A worker failure is reported through a static notice, with no provider metadata.
 pub fn open(app: &AppHandle) -> tauri::Result<()> {
+    if OPENING.compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire).is_err() {
+        return Ok(());
+    }
+    let request = OpenRequest;
+    let app = app.clone();
+    std::thread::Builder::new()
+        .name("nyrva-experience-open".into())
+        .spawn(move || {
+            let _request = request;
+            if open_window(&app).is_err() {
+                let _ = app.emit_to("notch", "notice", "Não foi possível abrir o Nyrva Experience.");
+            }
+        })?;
+    Ok(())
+}
+
+fn open_window(app: &AppHandle) -> tauri::Result<()> {
     if let Some(window) = app.get_webview_window("dashboard") {
         window.unminimize()?;
         window.show()?;
