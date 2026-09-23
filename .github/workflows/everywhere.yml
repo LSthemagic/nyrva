@@ -1,0 +1,56 @@
+name: Nyrva Everywhere
+on:
+  push:
+    branches: [feat/everywhere]
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  source:
+    name: Reproducible source checkpoint
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - run: |
+          mkdir -p evidence
+          git archive --format=tar.gz HEAD > evidence/source.tar.gz
+          git rev-parse HEAD > evidence/commit.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: everywhere-source
+          path: evidence/
+          retention-days: 7
+  core:
+    name: All core contracts (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+      - name: Full core suite, no skipped tests
+        shell: bash
+        run: |
+          mkdir -p evidence
+          set +e
+          cargo test -p nyrva-core --locked --no-fail-fast > evidence/core.log 2>&1
+          result=$?
+          tail -90 evidence/core.log
+          exit $result
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: everywhere-core-${{ runner.os }}
+          path: evidence/
+          retention-days: 7
