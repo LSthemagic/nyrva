@@ -30,6 +30,10 @@ async fn experience_smoke_lifecycle(window: WebviewWindow) -> Result<Value, Stri
     if window.label() != "dashboard" { return Err("wrong test window".into()); }
     tauri::async_runtime::spawn_blocking(move || {
         let app = window.app_handle().clone();
+        // generate_context! also creates the configured hidden notch. Preserve it.
+        let mut before: Vec<_> = app.webview_windows().into_keys().collect();
+        before.sort();
+        if !before.iter().any(|name| name == "notch") { return Err("configured notch is missing".into()); }
         window.close().map_err(|e| e.to_string())?;
         until(|| !window.is_visible().unwrap_or(true))?;
         if app.get_webview_window("dashboard").is_none() { return Err("close destroyed the dashboard".into()); }
@@ -44,8 +48,11 @@ async fn experience_smoke_lifecycle(window: WebviewWindow) -> Result<Value, Stri
         }).map_err(|e| e.to_string())?;
         receiver.recv_timeout(Duration::from_secs(3)).map_err(|_| "main-thread opening callback did not return")??;
         until(|| window.is_visible().unwrap_or(false))?;
-        if app.webview_windows().len() != 1 { return Err("repeated opens created duplicate windows".into()); }
-        Ok(json!({"close_hides":true,"reopen_visible":true,"rapid_requests":32,"window_count":1,"event_callback_returned":true}))
+        let mut after: Vec<_> = app.webview_windows().into_keys().collect();
+        after.sort();
+        if after != before { return Err(format!("opening changed the window set: {before:?} -> {after:?}")); }
+        let dashboards = after.iter().filter(|name| name.as_str() == "dashboard").count();
+        Ok(json!({"close_hides":true,"reopen_visible":true,"rapid_requests":32,"dashboard_count":dashboards,"notch_preserved":true,"event_callback_returned":true}))
     }).await.map_err(|e| e.to_string())?
 }
 
@@ -90,7 +97,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let handle = app.handle().clone();
             let marker = root.join("opening-callback-returned");
             // Dispatch from another thread so this cannot execute inline in setup.
-            // The actual opener then runs in a synchronous event-loop callback.
             std::thread::spawn(move || {
                 let dispatcher = handle.clone();
                 let _ = dispatcher.run_on_main_thread(move || {

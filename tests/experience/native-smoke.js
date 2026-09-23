@@ -26,9 +26,9 @@
     off();
     checks.push('real preference persistence and live rendering');
     const lifecycle = await window.__TAURI__.core.invoke('experience_smoke_lifecycle');
-    assert(lifecycle.close_hides && lifecycle.reopen_visible && lifecycle.event_callback_returned && lifecycle.window_count === 1 && lifecycle.rapid_requests === 32, 'window lifecycle failed');
+    assert(lifecycle.close_hides && lifecycle.reopen_visible && lifecycle.event_callback_returned && lifecycle.dashboard_count === 1 && lifecycle.notch_preserved && lifecycle.rapid_requests === 32, 'window lifecycle failed');
     assert(document.body.dataset.layout === 'bars', 'reopening lost the current layout');
-    checks.push('close hides; main-thread reopening returns; 32 rapid opens reuse one window and preserve layout');
+    checks.push('close hides; event-loop reopening returns; 32 rapid opens reuse one dashboard and preserve notch/layout');
     let rejected = false;
     try { await ipc('import_settings', {text:'{"secret":"MUST_NOT_PERSIST"}'}); } catch { rejected = true; }
     assert(rejected && (await ipc('export_settings')).layout === 'bars', 'invalid import replaced valid settings');
