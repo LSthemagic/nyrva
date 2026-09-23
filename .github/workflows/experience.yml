@@ -34,3 +34,26 @@ jobs:
           name: experience-presentation
           path: experience-evidence/
           retention-days: 7
+  browser:
+    name: Experience browser E2E (not native acceptance)
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install isolated browser test dependencies
+        run: |
+          python -m pip install playwright==1.55.0
+          python -m playwright install --with-deps chromium
+      - name: Exercise the shipped dashboard
+        run: python tests/experience/browser.py --output experience-evidence/browser
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: experience-browser
+          path: experience-evidence/browser/
+          retention-days: 7
