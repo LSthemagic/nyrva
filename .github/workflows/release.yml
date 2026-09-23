@@ -6,6 +6,11 @@ on:
     branches: [main]
     paths: ['.github/release-request.json']
   workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag (for example v1.0.3)'
+        required: false
+        type: string
 
 permissions:
   contents: read
