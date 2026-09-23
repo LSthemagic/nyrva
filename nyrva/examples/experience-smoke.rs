@@ -64,6 +64,7 @@ fn experience_smoke_finish(window: WebviewWindow, mut report: Value) -> Result<(
     let returned = root.join("opening-callback-returned").is_file();
     report["provider_file_preserved"] = json!(preserved);
     report["opening_callback_returned"] = json!(returned);
+    report["creation_deferred"] = json!(returned);
     report["harness"] = json!("production opener on the event-loop thread; real Tauri/webview/SQLite; synthetic data");
     report["exclusions"] = json!(["physical tray click", "physical multi-monitor DPI", "packaged installer", "real provider authentication", "Everywhere"]);
     let ok = report["ok"] == true && preserved && returned;
@@ -95,13 +96,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .setup(move |app| {
             observatory::install(app.handle())?;
             let handle = app.handle().clone();
-            let marker = root.join("opening-callback-returned");
+            let opening_root = root.clone();
             // Dispatch from another thread so this cannot execute inline in setup.
             std::thread::spawn(move || {
                 let dispatcher = handle.clone();
                 let _ = dispatcher.run_on_main_thread(move || {
                     match observatory::open(&handle) {
-                        Ok(()) => { let _ = std::fs::write(marker, b"returned"); }
+                        Ok(()) => {
+                            // A deterministic contract, not a timing benchmark: creation
+                            // must be deferred until this event callback can return.
+                            if handle.get_webview_window("dashboard").is_some() {
+                                let _ = std::fs::write(opening_root.join("native-smoke.json"), b"{\"ok\":false,\"reason\":\"window creation ran inline on the event-loop callback\"}");
+                                handle.exit(1);
+                                return;
+                            }
+                            let _ = std::fs::write(opening_root.join("opening-callback-returned"), b"deferred");
+                        }
                         Err(error) => { eprintln!("production opener failed: {error}"); handle.exit(1); }
                     }
                 });
