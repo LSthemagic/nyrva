@@ -330,6 +330,11 @@ pub(crate) fn run(args: &[String], root: &Path, out: &mut dyn Write) -> Result<(
     while Instant::now() < until {
         match listener.accept() {
             Ok((mut stream, peer)) => {
+                // Winsock inherits the listener's nonblocking mode. Workers use
+                // bounded blocking I/O, including while HTTP headers arrive in parts.
+                if stream.set_nonblocking(false).is_err() {
+                    continue;
+                }
                 if !peer.ip().is_loopback() || active.load(Ordering::Acquire) >= CLIENT_LIMIT {
                     let _ = stream.set_write_timeout(Some(Duration::from_millis(100)));
                     let _ = response(
