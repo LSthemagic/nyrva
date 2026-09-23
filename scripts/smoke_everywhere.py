@@ -12,6 +12,41 @@ import tempfile
 import time
 
 
+def read_http_response(connection: socket.socket) -> bytes:
+    """Read one bounded Content-Length response, not the TCP connection lifetime.
+
+    Windows can abort the transport after a complete response. Stop at the HTTP
+    message boundary; never suppress a socket error or accept a truncated body.
+    SSE is intentionally read separately because it has no Content-Length.
+    """
+    result = bytearray()
+    while b'\r\n\r\n' not in result:
+        part = connection.recv(4096)
+        assert part, 'local API ended before response headers'
+        result.extend(part)
+        boundary = result.find(b'\r\n\r\n')
+        assert (boundary + 4 if boundary >= 0 else len(result)) <= 8192, 'API response headers exceed limit'
+    header_end = result.index(b'\r\n\r\n') + 4
+    headers: dict[bytes, bytes] = {}
+    for line in bytes(result[:header_end - 4]).split(b'\r\n')[1:]:
+        name, separator, value = line.partition(b':')
+        name = name.lower()
+        assert separator and name and name not in headers, 'invalid or duplicate API response header'
+        headers[name] = value.strip()
+    length = headers.get(b'content-length', b'')
+    assert length.isdigit() and len(length) <= 7, 'API response needs an explicit valid length'
+    assert b'transfer-encoding' not in headers, 'ambiguous API response framing'
+    size = int(length)
+    assert size <= 2 * 1024 * 1024, 'API response body exceeds limit'
+    message_end = header_end + size
+    assert len(result) <= message_end, 'unexpected bytes after API response'
+    while len(result) < message_end:
+        part = connection.recv(min(65536, message_end - len(result)))
+        assert part, 'local API ended before the complete response body'
+        result.extend(part)
+    return bytes(result)
+
+
 def run(binary: Path, output: Path | None) -> None:
     checks: list[str] = []
     with tempfile.TemporaryDirectory(prefix='nyrva-everywhere-') as temporary:
@@ -114,12 +149,7 @@ def run(binary: Path, output: Path | None) -> None:
                     if token: header += f'Authorization: Bearer {session["token"]}\r\n'
                     if origin: header += 'Origin: https://untrusted.example\r\n'
                     c.sendall((header+'\r\n').encode())
-                    result=b''
-                    while True:
-                        part=c.recv(65536)
-                        if not part: break
-                        result+=part
-                    return result
+                    return read_http_response(c)
             assert request('/v1/status',token=False).startswith(b'HTTP/1.1 401')
             assert request('/v1/status',origin=True).startswith(b'HTTP/1.1 403')
             assert request('/v1/status',method='POST').startswith(b'HTTP/1.1 405')
