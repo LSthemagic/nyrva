@@ -1,0 +1,90 @@
+name: Experience completion
+on:
+  push:
+    branches: [fix/experience-completion]
+  pull_request:
+    paths: ['nyrva/**', 'nyrva-core/**', 'tests/experience/**', 'scripts/experience*', '.github/workflows/experience-close.yml']
+permissions:
+  contents: read
+jobs:
+  native:
+    name: Experience acceptance (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    env:
+      CARGO_TERM_COLOR: never
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: experience-completion
+          cache-on-failure: true
+      - name: Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -qq > /tmp/experience-apt.log 2>&1
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev xdg-utils xvfb dbus-x11 >> /tmp/experience-apt.log 2>&1
+      - name: Prepare Linux sidecar
+        if: runner.os == 'Linux'
+        run: bash scripts/prepare-linux-sidecar.sh debug > /tmp/experience-sidecar.log 2>&1
+      - name: Prepare Windows sidecar
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./scripts/prepare-windows-sidecar.ps1 debug
+      - name: Check, desktop tests and native example
+        shell: bash
+        run: |
+          mkdir -p experience-evidence
+          cargo check -p nyrva --locked > experience-evidence/check.log 2>&1 || { tail -60 experience-evidence/check.log; exit 1; }
+          cargo test -p nyrva --locked > experience-evidence/desktop-tests.log 2>&1 || { tail -60 experience-evidence/desktop-tests.log; exit 1; }
+          cargo build -p nyrva --example experience-smoke --locked > experience-evidence/native-build.log 2>&1 || { tail -60 experience-evidence/native-build.log; exit 1; }
+          grep 'test result:' experience-evidence/desktop-tests.log
+          git diff --exit-code -- Cargo.lock
+      - name: Windows loader diagnostics
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          python -m pip install pefile==2024.8.26 --quiet
+          python scripts/experience-loader.py target/debug/examples/experience-smoke.exe
+      - name: Native Linux X11 smoke
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          export NYRVA_EXPERIENCE_SMOKE_DIR="$PWD/experience-evidence/data"
+          export GDK_BACKEND=x11
+          export WEBKIT_DISABLE_DMABUF_RENDERER=1
+          timeout 100s xvfb-run -a dbus-run-session -- target/debug/examples/experience-smoke > experience-evidence/native-smoke.log 2>&1 || { tail -40 experience-evidence/native-smoke.log; exit 1; }
+          python -c 'import json; p=json.load(open("experience-evidence/data/native-smoke.json")); print(json.dumps(p)); assert p["ok"] and p["provider_file_preserved"]'
+      - name: Native Windows smoke
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $env:NYRVA_EXPERIENCE_SMOKE_DIR = Join-Path $PWD 'experience-evidence/data'
+          $process = Start-Process target/debug/examples/experience-smoke.exe -PassThru -RedirectStandardOutput experience-evidence/native-smoke.log -RedirectStandardError experience-evidence/native-smoke-error.log
+          if (-not $process.WaitForExit(100000)) { $process.Kill(); throw 'native smoke timed out' }
+          if (Test-Path experience-evidence/data/native-smoke.json) { Get-Content experience-evidence/data/native-smoke.json }
+          if ($process.ExitCode -ne 0) { Get-Content experience-evidence/native-smoke-error.log; throw "native smoke failed: $($process.ExitCode)" }
+          $report = Get-Content experience-evidence/data/native-smoke.json -Raw | ConvertFrom-Json
+          if (-not $report.ok -or -not $report.provider_file_preserved) { throw 'native acceptance failed' }
+      - name: Full core suite (includes known Everywhere failures)
+        if: always()
+        shell: bash
+        run: |
+          mkdir -p experience-evidence
+          cargo test -p nyrva-core --locked --no-fail-fast > experience-evidence/core-full.log 2>&1
+          result=$?
+          tail -60 experience-evidence/core-full.log
+          exit $result
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: experience-completion-${{ runner.os }}
+          path: experience-evidence/
+          retention-days: 7
