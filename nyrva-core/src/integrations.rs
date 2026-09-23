@@ -164,8 +164,12 @@ impl Drop for CodexServer { fn drop(&mut self) { let _=self.input.flush(); let _
 fn codex_items(config: &Value) -> Result<Vec<String>, String> {
     match config.pointer("/tui/status_line") {
         None => Ok(CODEX_DEFAULT_ITEMS.iter().map(|v| (*v).into()).collect()),
+        // Codex documents tui.status_line as array<string> | null. A null
+        // effective value means the status line is explicitly disabled; keep
+        // that distinct from an absent key, which uses Codex defaults.
+        Some(Value::Null) => Ok(Vec::new()),
         Some(Value::Array(items)) if items.iter().all(Value::is_string) => Ok(items.iter().map(|v| v.as_str().unwrap().to_string()).collect()),
-        Some(_) => Err("Codex tui.status_line is not a string list; no change made".into()),
+        Some(_) => Err("Codex tui.status_line has an unsupported value; expected a string list or null; no change made".into()),
     }
 }
 fn codex_user_layer(read: &Value) -> Result<(String,String),String> {
