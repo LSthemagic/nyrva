@@ -2,7 +2,7 @@ name: Verify Everywhere distribution candidate
 on:
   push:
     branches: [feat/everywhere]
-    paths: [.github/everywhere-distribution.json]
+    paths: [.github/everywhere-distribution.json, .github/workflows/everywhere-distribution-candidate.yml]
 permissions:
   contents: read
 jobs:
@@ -17,6 +17,9 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Validate exact patch and allowed paths
