@@ -179,7 +179,7 @@ fn codex_user_layer(read: &Value) -> Result<(String,String),String> {
 }
 fn codex_run(action:&str,flags:&Flags,out:&mut dyn Write)->Result<(),String>{
     if flags.get("--executable").is_some()||flags.get("--account").is_some()||flags.has("--replace"){return Err("Codex native statusline does not accept --executable, --account or --replace".into());}
-    let home=flags.get("--home").map(PathBuf::from).map(Ok).unwrap_or_else(||std::env::var_os("CODEX_HOME").map(PathBuf::from).or_else(||home().ok().map(|h|h.join(".codex"))).ok_or_else(||"cannot resolve CODEX_HOME; pass --home".into()))?;
+    let home = flags.get("--home").map(PathBuf::from).or_else(|| std::env::var_os("CODEX_HOME").map(PathBuf::from)).or_else(|| home().ok().map(|h| h.join(".codex"))).ok_or_else(|| "cannot resolve CODEX_HOME; pass --home".to_string())?;
     path_text(&home)?;
     let mut server=CodexServer::start(&home)?;
     let before=server.request("config/read",json!({"includeLayers":true}))?;
