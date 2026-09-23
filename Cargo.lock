@@ -2658,9 +2658,14 @@ name = "nyrva-core"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "ring",
  "rusqlite",
+ "semver",
  "serde",
  "serde_json",
+ "subtle",
+ "url",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]

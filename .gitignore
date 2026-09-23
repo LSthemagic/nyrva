@@ -2,3 +2,4 @@ target/
 *.log
 codenotch/gen/
 nyrva/binaries/
+nyrva/gen/

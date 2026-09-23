@@ -12,3 +12,10 @@ mod model;
 pub use history::History;
 pub use ingest::{parse_legacy, parse_statusline};
 pub use model::*;
+
+mod everywhere;
+mod integrations;
+mod local_api;
+mod maintenance;
+mod private_fs;
+mod terminal;

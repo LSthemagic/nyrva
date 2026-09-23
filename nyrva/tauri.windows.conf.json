@@ -2,6 +2,6 @@
   "bundle": {
     "targets": ["nsis"],
     "icon": ["icons/icon.ico"],
-    "externalBin": ["binaries/nyrva-hook"]
+    "externalBin": ["binaries/nyrva-hook", "binaries/nyrva-telemetry"]
   }
 }
