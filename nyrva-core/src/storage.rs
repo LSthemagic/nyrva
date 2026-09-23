@@ -7,7 +7,10 @@ pub(crate) fn check_path(path:&Path)->Result<(),String> {
     for p in path.ancestors() {
         match fs::symlink_metadata(p) {
             Ok(m) if m.file_type().is_symlink() => return Err("private state must not follow symbolic links".into()),
-            Ok(_) => (),
+            Ok(m) => {
+                #[cfg(windows)] { use std::os::windows::fs::MetadataExt; if m.file_attributes() & 0x400 != 0 { return Err("private state must not follow reparse points".into()); } }
+                #[cfg(not(windows))] let _ = m;
+            },
             Err(e) if e.kind()==std::io::ErrorKind::NotFound => (),
             Err(_) => return Err("cannot inspect private state".into()),
         }

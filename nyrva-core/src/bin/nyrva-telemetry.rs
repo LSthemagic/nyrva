@@ -19,8 +19,8 @@ fn main() -> ExitCode {
         nyrva_core::cli::run(
             &std::env::args().skip(1).collect::<Vec<_>>(),
             &root,
-            &mut io::stdin().lock(),
-            &mut io::stdout().lock(),
+            &mut io::stdin(),
+            &mut io::stdout(),
         )
     });
     match result {

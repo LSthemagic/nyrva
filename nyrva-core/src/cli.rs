@@ -24,9 +24,15 @@ fn options(args:&[String])->Result<Options,String>{
     if command=="forecast"&&o.bucket.is_none(){return Err("forecast requires --bucket ID".into());}Ok(o)
 }
 pub fn run(args:&[String],root:&Path,input:&mut dyn Read,out:&mut dyn Write)->Result<(),String>{
+    let (args, root) = if args.first().is_some_and(|s|s=="--data-dir") {
+        let path=Path::new(args.get(1).ok_or("--data-dir requires an absolute path")?);
+        if !path.is_absolute() || args.len()<3 {return Err("--data-dir requires an absolute path followed by a command".into());}
+        (&args[2..],path)
+    } else {(args,root)};
+    if let Some(result)=crate::everywhere::run(args,root,input,out){return result;}
     if let Some(result)=crate::commands::run(args,root,input,out){return result;}
     let o=options(args)?;let now=now_ms();
-    if o.command=="help"||o.command=="--help"{return writeln!(out,"Nyrva telemetry\n  cockpit | projects | agents | doctor | export [--json]\n  status [PROVIDER] [--account ALIAS] [--json]\n  resets [PROVIDER] [--account ALIAS] [--json]\n  sessions [PROVIDER] [--account ALIAS] [--json]\n  history PROVIDER [--account ALIAS] [--source SOURCE] [--limit 1..5000] [--json]\n  forecast PROVIDER --bucket ID [--account ALIAS] [--source SOURCE] [--reserve 0.1] [--json]\n  ingest antigravity|claude [--account ALIAS] [--json] < payload.json\n  statusline antigravity|claude [--account ALIAS]\n  settings export | import --apply | rollback --apply\n  privacy status | clear --confirm\n  alerts list | refresh\n\nDisplay commands use local cached data. Ingestion/history default to alias active; aliases are not provider authentication.").map_err(|_|"cannot write command output".into());}
+    if o.command=="help"||o.command=="--help"{return writeln!(out,"Nyrva telemetry\n  [--data-dir ABSOLUTE_PATH] COMMAND\n  top [--once] [--json] [--interval 1..60] [--iterations 1..3600] [--no-ansi]\n  integrations plan|install|remove claude|antigravity [--home PATH] [--executable PATH] [--account ALIAS] [--apply] [--replace]\n  serve [--port 0..65535] [--duration 1..86400]\n  update status | configure --apply | verify --manifest FILE --signature FILE --artifact FILE\n  migrate status | --apply | rollback --apply\n  cockpit | projects | agents | doctor | export [--json]\n  status [PROVIDER] [--account ALIAS] [--json]\n  resets [PROVIDER] [--account ALIAS] [--json]\n  sessions [PROVIDER] [--account ALIAS] [--json]\n  history PROVIDER [--account ALIAS] [--source SOURCE] [--limit 1..5000] [--json]\n  forecast PROVIDER --bucket ID [--account ALIAS] [--source SOURCE] [--reserve 0.1] [--json]\n  ingest antigravity|claude [--account ALIAS] [--json] < payload.json\n  statusline antigravity|claude [--account ALIAS]\n  settings export | import --apply | rollback --apply\n  privacy status | clear --confirm\n  alerts list | refresh\n\nDisplay commands use local cached data. Ingestion/history default to alias active; aliases are not provider authentication.").map_err(|_|"cannot write command output".into());}
     if o.command=="statusline"||o.command=="ingest"{
         let mut bytes=Vec::new();input.take((MAX_PAYLOAD_BYTES+1) as u64).read_to_end(&mut bytes).map_err(|_|"cannot read statusline input")?;
         if bytes.len()>MAX_PAYLOAD_BYTES{return Err("statusline exceeds 256 KiB".into());}
