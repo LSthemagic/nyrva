@@ -26,6 +26,18 @@ Start with the [Everywhere command and security guide](docs/everywhere.md). Use 
 
 [Implementation acceptance](docs/everywhere-acceptance.md) records the tested commit, automated evidence and the physical-device checks still owned by the maintainer. It is separate from public release authorization.
 
+## Download Nyrva 1.0
+
+Quando o candidato `v1.0.0` estiver disponível, use a página da release como ponto único de download:
+
+- **Windows:** `Nyrva_1.0.0_x64-setup.exe`
+- **Linux Debian/Ubuntu:** `Nyrva_1.0.0_amd64.deb`
+- **Linux portátil:** `Nyrva_1.0.0_amd64.AppImage`
+
+[**Abrir downloads da Nyrva v1.0.0**](https://github.com/LSthemagic/nyrva/releases/tag/v1.0.0)
+
+A release começa como **Draft** durante o aceite físico. Drafts são visíveis ao mantenedor autenticado; depois do aceite, a mesma página passa a ser o download público e permanente. Não use artefatos de outra execução para validar esta versão.
+
 ## Installable builds
 
 Successful CI runs upload:
