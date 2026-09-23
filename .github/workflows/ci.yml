@@ -111,14 +111,14 @@ jobs:
           $machinePath = [Environment]::GetEnvironmentVariable('Path', 'Machine')
           $freshPath = "$machinePath;$userPath"
           $probe = @'
-$resolved = (Get-Command nyrva-telemetry.exe -ErrorAction Stop).Source
-$expected = Join-Path $env:NYRVA_EXPECTED_DIR 'nyrva-telemetry.exe'
-if ([IO.Path]::GetFullPath($resolved) -ne [IO.Path]::GetFullPath($expected)) {
-  throw "nyrva-telemetry resolves to an unexpected executable: $resolved"
-}
-& nyrva-telemetry.exe status --json
-if ($LASTEXITCODE -ne 0) { throw 'PATH CLI invocation failed' }
-'@
+          $resolved = (Get-Command nyrva-telemetry.exe -ErrorAction Stop).Source
+          $expected = Join-Path $env:NYRVA_EXPECTED_DIR 'nyrva-telemetry.exe'
+          if ([IO.Path]::GetFullPath($resolved) -ne [IO.Path]::GetFullPath($expected)) {
+            throw "nyrva-telemetry resolves to an unexpected executable: $resolved"
+          }
+          & nyrva-telemetry.exe status --json
+          if ($LASTEXITCODE -ne 0) { throw 'PATH CLI invocation failed' }
+          '@
           $oldPath = $env:Path
           $env:Path = $freshPath
           $env:NYRVA_EXPECTED_DIR = $installDir
