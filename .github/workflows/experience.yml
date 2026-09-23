@@ -1,0 +1,36 @@
+name: Nyrva Experience
+on:
+  push:
+    branches: [feat/nyrva-1.0]
+    paths:
+      - 'nyrva/**'
+      - 'nyrva-core/**'
+      - 'tests/experience/**'
+      - 'scripts/experience*'
+      - '.github/workflows/experience.yml'
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  presentation:
+    name: Experience presentation contracts
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Formatting, freshness and history contracts
+        run: |
+          set -o pipefail
+          mkdir -p experience-evidence
+          node --test tests/experience/*.test.mjs 2>&1 | tee experience-evidence/presentation.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: experience-presentation
+          path: experience-evidence/
+          retention-days: 7
