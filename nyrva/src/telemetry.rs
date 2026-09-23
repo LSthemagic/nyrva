@@ -1,12 +1,12 @@
 //! Desktop boundary for the headless telemetry core. No provider credentials are read here.
 use crate::usage::{LimitWindow, UsageSnapshot};
-use nyrva_core::{cli, DataStatus, History, Provider, Snapshot};
+use nyrva_core::{cli, config, DataStatus, History, Provider, Snapshot};
 use std::{
     path::PathBuf,
     time::{Duration, Instant},
 };
 
-fn data_root() -> Result<PathBuf, String> {
+pub(crate) fn data_root() -> Result<PathBuf, String> {
     if let Some(path) = std::env::var_os("NYRVA_DATA_DIR").filter(|p| !p.is_empty()) {
         return Ok(PathBuf::from(path));
     }
@@ -150,11 +150,12 @@ pub fn start() {
             }
             if last_import.elapsed() >= Duration::from_secs(30) {
                 let result = cli::read_current(&root, now).and_then(|items| {
-                    for s in items
+                    for mut s in items
                         .into_iter()
                         .filter(|s| s.source == "legacy_adapter" && s.observed_at_ms > 0)
                     {
-                        db.record(&s)?;
+                        // The same validated ingestion boundary as statusline helpers.
+                        config::record(&root, &mut s)?;
                     }
                     Ok(())
                 });
@@ -170,7 +171,10 @@ pub fn start() {
                 last_import = Instant::now();
             }
             if last_prune.elapsed() >= Duration::from_secs(3600) {
-                if let Err(e) = db.prune(now.saturating_sub(90 * 24 * 60 * 60 * 1000)) {
+                let result = config::load(&root).and_then(|settings| {
+                    db.prune(now.saturating_sub(u64::from(settings.retention_days) * 86_400_000))
+                });
+                if let Err(e) = result {
                     eprintln!("Nyrva telemetry: {e}");
                 }
                 last_prune = Instant::now();

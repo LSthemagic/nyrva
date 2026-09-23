@@ -4,7 +4,11 @@ use tauri::menu::{CheckMenuItemBuilder, Menu, MenuBuilder, MenuItemBuilder, Subm
 use tauri::tray::TrayIconBuilder;
 use tauri::{AppHandle, Emitter, Manager, Wry};
 
+#[path = "observatory.rs"]
+mod observatory;
+
 pub fn setup(app: &AppHandle) -> tauri::Result<()> {
+    observatory::install(app)?;
     let lang = {
         let st = app.state::<crate::AppState>();
         let c = st.cfg.lock().unwrap();
@@ -23,6 +27,7 @@ pub fn setup(app: &AppHandle) -> tauri::Result<()> {
 }
 
 pub fn build_menu(app: &AppHandle, lang: &str) -> tauri::Result<Menu<Wry>> {
+    let experience = MenuItemBuilder::with_id("observatory", "Nyrva Experience…").build(app)?;
     let install = MenuItemBuilder::with_id("install", tr(lang, "install")).build(app)?;
     let uninstall = MenuItemBuilder::with_id("uninstall", tr(lang, "uninstall")).build(app)?;
     let l_auto = CheckMenuItemBuilder::with_id("lang-auto", tr(lang, "lang_auto"))
@@ -51,6 +56,8 @@ pub fn build_menu(app: &AppHandle, lang: &str) -> tauri::Result<Menu<Wry>> {
         .build(app)?;
     let quit = MenuItemBuilder::with_id("quit", tr(lang, "quit")).build(app)?;
     MenuBuilder::new(app)
+        .item(&experience)
+        .separator()
         .items(&[&install, &uninstall])
         .separator()
         .item(&lang_menu)
@@ -78,6 +85,11 @@ fn refresh_menu(app: &AppHandle) {
 
 fn handle(app: &AppHandle, id: &str) {
     match id {
+        "observatory" => {
+            if observatory::open(app).is_err() {
+                notice(app, Err("Não foi possível abrir o Nyrva Experience.".into()));
+            }
+        }
         "install" => notice(app, hooks_install::install()),
         "uninstall" => notice(app, hooks_install::uninstall()),
         "reset" => crate::reset_bar(app),
@@ -106,7 +118,7 @@ fn handle(app: &AppHandle, id: &str) {
                 crate::platform::autostart::enable()
             };
             notice(app, r);
-            refresh_menu(app); // refresh the check marks
+            refresh_menu(app);
         }
         "quit" => app.exit(0),
         _ if id.starts_with("lang-") => crate::apply_lang(app, &id[5..]),

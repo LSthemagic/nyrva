@@ -1,0 +1,48 @@
+name: Desktop verification dependencies
+on:
+  push:
+    branches: [feat/nyrva-1.0]
+    paths: [.github/workflows/desktop-dev-kit.yml]
+permissions:
+  contents: read
+jobs:
+  prepare:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Fetch official Tauri 2 plugin sources
+        run: |
+          mkdir -p /tmp/nyrva-desktop-deps/src
+          cat > /tmp/nyrva-desktop-deps/Cargo.toml <<'EOF'
+          [package]
+          name = "nyrva-desktop-verification-deps"
+          version = "0.0.0"
+          edition = "2021"
+          [dependencies]
+          tauri = { version = "2", features = ["tray-icon", "image-png"] }
+          tauri-plugin-notification = "2"
+          tauri-plugin-global-shortcut = "2"
+          tauri-plugin-updater = "2"
+          EOF
+          printf 'fn main() {}\n' > /tmp/nyrva-desktop-deps/src/main.rs
+          cargo fetch --manifest-path /tmp/nyrva-desktop-deps/Cargo.toml
+      - name: Package verification tools
+        run: |
+          mkdir -p evidence
+          cp /tmp/nyrva-desktop-deps/Cargo.lock evidence/desktop-dependencies.lock
+          npm pack prettier@3 --pack-destination evidence
+          tar -czf evidence/desktop-registry.tar.gz -C "$HOME/.cargo" registry
+          sha256sum evidence/* > evidence/SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nyrva-desktop-verification-deps
+          path: evidence/
+          compression-level: 0
+          retention-days: 2

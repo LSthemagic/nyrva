@@ -1,0 +1,39 @@
+name: Native Linux verification kit
+on:
+  push:
+    branches: [feat/nyrva-1.0]
+    paths: [.github/workflows/native-linux-kit.yml]
+permissions:
+  contents: read
+jobs:
+  prepare:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Fetch repository dependencies
+        run: cargo fetch --locked
+      - name: Obtain native X11 packages from Debian repositories
+        run: |
+          mkdir -p evidence
+          docker run --rm -v "$PWD/evidence:/output" debian:13-slim bash -euc '
+            apt-get update
+            apt-get install -y --download-only --no-install-recommends \
+              libgtk-3-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev \
+              librsvg2-dev libxdo-dev libssl-dev xvfb xauth dbus-x11 \
+              webkit2gtk-driver xdotool
+            tar -czf /output/native-debian-packages.tar.gz -C /var/cache/apt/archives --exclude=lock --exclude=partial .
+          '
+      - name: Archive dependency sources and checksums
+        run: |
+          tar -czf evidence/workspace-registry.tar.gz -C "$HOME/.cargo" registry
+          sha256sum evidence/*.tar.gz > evidence/SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nyrva-native-linux-verification-kit
+          path: evidence/
+          compression-level: 0
+          retention-days: 2

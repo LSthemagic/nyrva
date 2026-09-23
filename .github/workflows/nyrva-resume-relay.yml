@@ -1,0 +1,91 @@
+name: Verify Nyrva resume checkpoint
+on:
+  push:
+    branches: [feat/nyrva-1.0]
+    paths: [.github/nyrva-resume-patch.json]
+permissions:
+  contents: read
+jobs:
+  verify:
+    if: github.repository == 'LSthemagic/nyrva' && github.ref == 'refs/heads/feat/nyrva-1.0'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - name: Validate and apply the explicitly scoped patch
+        run: |
+          python - <<'PY'
+          import base64,gzip,hashlib,json,pathlib,subprocess
+          raw=pathlib.Path('.github/nyrva-resume-patch.json').read_bytes()
+          assert len(raw)<262144, 'patch envelope too large'
+          v=json.loads(raw)
+          assert set(v)=={'base','format_first','sha256','gzip_base64'}, 'unknown patch field'
+          assert v['base']=='28d9e70d2bb73c0d92c4dc51d9f467efe790baf9', 'unexpected checkpoint'
+          subprocess.run(['git','merge-base','--is-ancestor',v['base'],'HEAD'],check=True)
+          patch=gzip.decompress(base64.b64decode(v['gzip_base64'],validate=True))
+          assert len(patch)<1048576 and hashlib.sha256(patch).hexdigest()==v['sha256'], 'patch integrity failure'
+          allowed=lambda s: (s.startswith('nyrva-core/') or s=='Cargo.lock') and '..' not in pathlib.PurePosixPath(s).parts and '\\' not in s
+          for path in v['format_first']:
+              assert allowed(path) and path.endswith('.rs')
+              baseline=subprocess.check_output(['git','show',v['base']+':'+path])
+              assert baseline==pathlib.Path(path).read_bytes(), 'concurrent change must be reconciled'
+              subprocess.run(['rustfmt','--edition','2021','--config','skip_children=true',path],check=True)
+          target=pathlib.Path('/tmp/nyrva-resume.patch');target.write_bytes(patch)
+          subprocess.run(['git','apply','--check',str(target)],check=True)
+          subprocess.run(['git','apply',str(target)],check=True)
+          changed=subprocess.check_output(['git','status','--porcelain','--untracked-files=all']).decode().splitlines()
+          for line in changed:
+              assert allowed(line[3:]), 'patch modified a path outside the core checkpoint'
+          subprocess.run(['git','add','--','nyrva-core'],check=True)
+          subprocess.run(['git','diff','--cached','--check'],check=True)
+          PY
+      - name: Resolve and execute the shared core and black-box helper
+        run: |
+          set -euo pipefail
+          mkdir -p checkpoint-evidence
+          cargo test -p nyrva-core --no-fail-fast 2>&1 | tee checkpoint-evidence/core-tests.log
+          cargo build -p nyrva-core --bin nyrva-telemetry --locked
+          python3 scripts/smoke_telemetry.py --binary target/debug/nyrva-telemetry --output checkpoint-evidence/cli-smoke.json
+          git add Cargo.lock
+      - name: Remove the one-shot transfer and completed dependency kit
+        run: |
+          git rm .github/nyrva-resume-patch.json .github/workflows/nyrva-resume-relay.yml .github/workflows/nyrva-updater-kit.yml
+          git diff --cached --check
+      - name: Create a candidate commit only (never update refs)
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const cp = require('child_process');
+            const {owner,repo} = context.repo;
+            const parent = context.sha;
+            const current = await github.rest.git.getCommit({owner,repo,commit_sha:parent});
+            const changed = cp.execFileSync('git',['diff','--cached','--name-only','-z']).toString().split('\0').filter(Boolean);
+            const removed = new Set(['.github/nyrva-resume-patch.json','.github/workflows/nyrva-resume-relay.yml','.github/workflows/nyrva-updater-kit.yml']);
+            const entries=[];
+            for(const path of changed) {
+              if(!(path.startsWith('nyrva-core/')||path==='Cargo.lock'||removed.has(path))||path.includes('..')) throw Error('candidate path out of scope');
+              if(!fs.existsSync(path)) { if(!removed.has(path)) throw Error('unexpected deletion'); entries.push({path,mode:'100644',type:'blob',sha:null}); continue; }
+              const blob=await github.rest.git.createBlob({owner,repo,content:fs.readFileSync(path).toString('base64'),encoding:'base64'});
+              entries.push({path,mode:'100644',type:'blob',sha:blob.data.sha});
+            }
+            const tree=await github.rest.git.createTree({owner,repo,base_tree:current.data.tree.sha,tree:entries});
+            const commit=await github.rest.git.createCommit({owner,repo,message:'feat(everywhere): verified private local API TUI reversible integrations and portable recovery',tree:tree.data.sha,parents:[parent]});
+            const evidence={parent,commit:commit.data.sha,tree:tree.data.sha,paths:changed,ref_updated:false};
+            fs.writeFileSync('checkpoint-evidence/candidate.json',JSON.stringify(evidence,null,2));
+            core.notice(`CANDIDATE_COMMIT_SHA=${commit.data.sha}`);
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: nyrva-verified-resume-checkpoint
+          path: checkpoint-evidence/
+          retention-days: 7
+          if-no-files-found: error
