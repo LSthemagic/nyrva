@@ -98,6 +98,21 @@ jobs:
           foreach ($binary in @('nyrva','nyrva-hook','nyrva-telemetry')) {
             if (-not (Test-Path (Join-Path $installDir "$binary.exe"))) { throw "installed $binary missing" }
           }
+          # The installer must expose the standalone CLI to future terminals
+          # through the per-user PATH.
+          $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
+          $entries = @($userPath -split ';' | ForEach-Object { $_.TrimEnd('\') } | Where-Object { $_ })
+          if ($entries -notcontains $installDir.TrimEnd('\')) {
+            throw "installer did not add its directory to the user PATH: $userPath"
+          }
+          $env:Path = "$installDir;$env:Path"
+          $resolved = (Get-Command nyrva-telemetry.exe -ErrorAction Stop).Source
+          if ([IO.Path]::GetFullPath($resolved) -ne [IO.Path]::GetFullPath((Join-Path $installDir 'nyrva-telemetry.exe'))) {
+            throw "nyrva-telemetry resolves to an unexpected executable: $resolved"
+          }
+          & nyrva-telemetry.exe status --json | Set-Content -Encoding utf8 target/everywhere-evidence/path-cli.json
+          if ($LASTEXITCODE -ne 0) { throw 'PATH CLI invocation failed' }
+
           python scripts/smoke_everywhere.py --binary (Join-Path $installDir 'nyrva-telemetry.exe') --output target/everywhere-evidence/installed-cli.json
           if ($LASTEXITCODE -ne 0) { throw 'installed CLI acceptance failed' }
           python scripts/smoke_everywhere.py --binary (Join-Path $installDir 'nyrva.exe') --output target/everywhere-evidence/installed-desktop.json

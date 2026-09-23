@@ -2,6 +2,11 @@
   "bundle": {
     "targets": ["nsis"],
     "icon": ["icons/icon.ico"],
-    "externalBin": ["binaries/nyrva-hook", "binaries/nyrva-telemetry"]
+    "externalBin": ["binaries/nyrva-hook", "binaries/nyrva-telemetry"],
+    "windows": {
+      "nsis": {
+        "installerHooks": "windows/installer-hooks.nsh"
+      }
+    }
   }
 }
